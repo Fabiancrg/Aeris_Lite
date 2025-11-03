@@ -2,6 +2,7 @@
  * Aeris Air Quality Sensor Driver Implementation
  *
  * I2C communication with air quality sensors
+ * UART communication with PMSA003A particulate matter sensor
  * Supports Temperature, Humidity, Pressure, PM, VOC Index, and CO2 sensors
  */
 
@@ -11,8 +12,30 @@
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
 #include "driver/i2c.h"
+#include "driver/uart.h"
+#include "driver/gpio.h"
 
 static const char *TAG = "AERIS_DRIVER";
+
+/* PMSA003A frame structure */
+#define PMSA003A_FRAME_LENGTH   32
+#define PMSA003A_START_CHAR_1   0x42
+#define PMSA003A_START_CHAR_2   0x4D
+
+typedef struct {
+    uint16_t pm1_0_cf1;      // PM1.0 concentration (CF=1, standard particle)
+    uint16_t pm2_5_cf1;      // PM2.5 concentration (CF=1)
+    uint16_t pm10_cf1;       // PM10 concentration (CF=1)
+    uint16_t pm1_0_atm;      // PM1.0 concentration (atmospheric environment)
+    uint16_t pm2_5_atm;      // PM2.5 concentration (atmospheric environment)
+    uint16_t pm10_atm;       // PM10 concentration (atmospheric environment)
+    uint16_t particles_0_3;  // Number of particles > 0.3µm in 0.1L of air
+    uint16_t particles_0_5;  // Number of particles > 0.5µm
+    uint16_t particles_1_0;  // Number of particles > 1.0µm
+    uint16_t particles_2_5;  // Number of particles > 2.5µm
+    uint16_t particles_5_0;  // Number of particles > 5.0µm
+    uint16_t particles_10;   // Number of particles > 10µm
+} pmsa003a_data_t;
 
 /* Current sensor state */
 static aeris_sensor_state_t current_state = {
@@ -27,6 +50,168 @@ static aeris_sensor_state_t current_state = {
     .sensor_error = false,
     .error_text = ""
 };
+
+/* PMSA003A latest data */
+static pmsa003a_data_t pmsa003a_data = {0};
+static bool pmsa003a_data_valid = false;
+
+/**
+ * @brief Initialize PMSA003A UART
+ */
+static esp_err_t pmsa003a_uart_init(void)
+{
+    uart_config_t uart_config = {
+        .baud_rate = PMSA003A_UART_BAUD,
+        .data_bits = UART_DATA_8_BITS,
+        .parity = UART_PARITY_DISABLE,
+        .stop_bits = UART_STOP_BITS_1,
+        .flow_ctrl = UART_HW_FLOWCTRL_DISABLE,
+        .source_clk = UART_SCLK_DEFAULT,
+    };
+    
+    esp_err_t err = uart_param_config(PMSA003A_UART_NUM, &uart_config);
+    if (err != ESP_OK) {
+        ESP_LOGE(TAG, "PMSA003A UART param config failed: %s", esp_err_to_name(err));
+        return err;
+    }
+    
+    err = uart_set_pin(PMSA003A_UART_NUM, PMSA003A_UART_TX_PIN, PMSA003A_UART_RX_PIN,
+                       UART_PIN_NO_CHANGE, UART_PIN_NO_CHANGE);
+    if (err != ESP_OK) {
+        ESP_LOGE(TAG, "PMSA003A UART set pin failed: %s", esp_err_to_name(err));
+        return err;
+    }
+    
+    err = uart_driver_install(PMSA003A_UART_NUM, PMSA003A_UART_BUF_SIZE * 2, 0, 0, NULL, 0);
+    if (err != ESP_OK) {
+        ESP_LOGE(TAG, "PMSA003A UART driver install failed: %s", esp_err_to_name(err));
+        return err;
+    }
+    
+    ESP_LOGI(TAG, "PMSA003A UART initialized on RX=%d, baud=%d", 
+             PMSA003A_UART_RX_PIN, PMSA003A_UART_BAUD);
+    return ESP_OK;
+}
+
+/**
+ * @brief Calculate checksum for PMSA003A frame
+ */
+static uint16_t pmsa003a_checksum(const uint8_t *data, size_t len)
+{
+    uint16_t sum = 0;
+    for (size_t i = 0; i < len; i++) {
+        sum += data[i];
+    }
+    return sum;
+}
+
+/**
+ * @brief Parse PMSA003A data frame
+ */
+static bool pmsa003a_parse_frame(const uint8_t *frame)
+{
+    // Verify start characters
+    if (frame[0] != PMSA003A_START_CHAR_1 || frame[1] != PMSA003A_START_CHAR_2) {
+        return false;
+    }
+    
+    // Verify frame length (should be 28 data bytes)
+    uint16_t frame_len = (frame[2] << 8) | frame[3];
+    if (frame_len != 28) {
+        ESP_LOGW(TAG, "PMSA003A invalid frame length: %d", frame_len);
+        return false;
+    }
+    
+    // Verify checksum
+    uint16_t checksum_calc = pmsa003a_checksum(frame, 30);
+    uint16_t checksum_recv = (frame[30] << 8) | frame[31];
+    if (checksum_calc != checksum_recv) {
+        ESP_LOGW(TAG, "PMSA003A checksum mismatch: calc=0x%04X, recv=0x%04X", 
+                 checksum_calc, checksum_recv);
+        return false;
+    }
+    
+    // Parse data (all values are big-endian uint16)
+    pmsa003a_data.pm1_0_cf1 = (frame[4] << 8) | frame[5];
+    pmsa003a_data.pm2_5_cf1 = (frame[6] << 8) | frame[7];
+    pmsa003a_data.pm10_cf1 = (frame[8] << 8) | frame[9];
+    pmsa003a_data.pm1_0_atm = (frame[10] << 8) | frame[11];
+    pmsa003a_data.pm2_5_atm = (frame[12] << 8) | frame[13];
+    pmsa003a_data.pm10_atm = (frame[14] << 8) | frame[15];
+    pmsa003a_data.particles_0_3 = (frame[16] << 8) | frame[17];
+    pmsa003a_data.particles_0_5 = (frame[18] << 8) | frame[19];
+    pmsa003a_data.particles_1_0 = (frame[20] << 8) | frame[21];
+    pmsa003a_data.particles_2_5 = (frame[22] << 8) | frame[23];
+    pmsa003a_data.particles_5_0 = (frame[24] << 8) | frame[25];
+    pmsa003a_data.particles_10 = (frame[26] << 8) | frame[27];
+    
+    // Update current state with atmospheric environment values (more accurate for real conditions)
+    current_state.pm1_0_ug_m3 = pmsa003a_data.pm1_0_atm;
+    current_state.pm2_5_ug_m3 = pmsa003a_data.pm2_5_atm;
+    current_state.pm10_ug_m3 = pmsa003a_data.pm10_atm;
+    
+    pmsa003a_data_valid = true;
+    
+    ESP_LOGD(TAG, "PMSA003A: PM1.0=%d, PM2.5=%d, PM10=%d µg/m³", 
+             pmsa003a_data.pm1_0_atm, pmsa003a_data.pm2_5_atm, pmsa003a_data.pm10_atm);
+    
+    return true;
+}
+
+/**
+ * @brief PMSA003A read task
+ */
+static void pmsa003a_task(void *arg)
+{
+    uint8_t frame[PMSA003A_FRAME_LENGTH];
+    uint8_t buffer[256];
+    size_t buffer_len = 0;
+    
+    ESP_LOGI(TAG, "PMSA003A read task started");
+    
+    while (1) {
+        // Read available data
+        int len = uart_read_bytes(PMSA003A_UART_NUM, buffer + buffer_len, 
+                                  sizeof(buffer) - buffer_len, pdMS_TO_TICKS(100));
+        
+        if (len > 0) {
+            buffer_len += len;
+            
+            // Look for frame start
+            for (size_t i = 0; i < buffer_len - 1; i++) {
+                if (buffer[i] == PMSA003A_START_CHAR_1 && buffer[i+1] == PMSA003A_START_CHAR_2) {
+                    // Found potential frame start
+                    if (buffer_len - i >= PMSA003A_FRAME_LENGTH) {
+                        // Have complete frame
+                        memcpy(frame, buffer + i, PMSA003A_FRAME_LENGTH);
+                        
+                        if (pmsa003a_parse_frame(frame)) {
+                            ESP_LOGI(TAG, "PMSA003A data: PM1.0=%d, PM2.5=%d, PM10=%d µg/m³",
+                                     pmsa003a_data.pm1_0_atm, pmsa003a_data.pm2_5_atm, 
+                                     pmsa003a_data.pm10_atm);
+                        }
+                        
+                        // Remove processed frame from buffer
+                        size_t remaining = buffer_len - i - PMSA003A_FRAME_LENGTH;
+                        if (remaining > 0) {
+                            memmove(buffer, buffer + i + PMSA003A_FRAME_LENGTH, remaining);
+                        }
+                        buffer_len = remaining;
+                        break;
+                    }
+                }
+            }
+            
+            // Prevent buffer overflow
+            if (buffer_len > sizeof(buffer) - 64) {
+                ESP_LOGW(TAG, "PMSA003A buffer overflow, resetting");
+                buffer_len = 0;
+            }
+        }
+        
+        vTaskDelay(pdMS_TO_TICKS(100));
+    }
+}
 
 /**
  * @brief Initialize I2C bus for sensors
@@ -70,18 +255,31 @@ esp_err_t aeris_driver_init(void)
     esp_err_t ret = i2c_master_init();
     if (ret != ESP_OK) {
         ESP_LOGE(TAG, "Failed to initialize I2C: %s", esp_err_to_name(ret));
+        // Continue anyway - PM sensor uses UART
+    }
+    
+    // Initialize PMSA003A UART
+    ret = pmsa003a_uart_init();
+    if (ret != ESP_OK) {
+        ESP_LOGE(TAG, "Failed to initialize PMSA003A UART: %s", esp_err_to_name(ret));
         return ret;
     }
     
-    // TODO: Initialize individual sensors here
+    // Create PMSA003A read task
+    BaseType_t task_ret = xTaskCreate(pmsa003a_task, "pmsa003a_task", 3072, NULL, 5, NULL);
+    if (task_ret != pdPASS) {
+        ESP_LOGE(TAG, "Failed to create PMSA003A task");
+        return ESP_FAIL;
+    }
+    
+    // TODO: Initialize other sensors here
     // - Temperature/Humidity sensor (e.g., SHT4x, BME280)
     // - Pressure sensor (e.g., BMP280, BME280)
-    // - PM sensor (e.g., PMS5003, SPS30)
     // - VOC sensor (e.g., SGP40, BME680)
     // - CO2 sensor (e.g., SCD40, SCD41)
     
     ESP_LOGI(TAG, "Aeris driver initialized successfully");
-    ESP_LOGW(TAG, "Note: Sensor initialization stubs - implement actual sensor init");
+    ESP_LOGW(TAG, "Note: I2C sensor initialization stubs - implement actual sensor init");
     
     return ESP_OK;
 }
@@ -145,8 +343,14 @@ esp_err_t aeris_read_pm(float *pm1_0, float *pm2_5, float *pm10)
         return ESP_ERR_INVALID_ARG;
     }
     
-    // TODO: Implement actual sensor reading
-    // Example for PMS5003 or SPS30
+    // Read from PMSA003A data (updated by background task)
+    if (!pmsa003a_data_valid) {
+        ESP_LOGW(TAG, "PMSA003A data not yet available");
+        *pm1_0 = 0.0f;
+        *pm2_5 = 0.0f;
+        *pm10 = 0.0f;
+        return ESP_ERR_NOT_FOUND;
+    }
     
     *pm1_0 = current_state.pm1_0_ug_m3;
     *pm2_5 = current_state.pm2_5_ug_m3;

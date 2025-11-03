@@ -36,6 +36,13 @@ typedef struct {
 #define AERIS_I2C_SCL_PIN       7    // GPIO7 (adjust for your board)
 #define AERIS_I2C_FREQ_HZ       100000
 
+/* UART Configuration for PMSA003A */
+#define PMSA003A_UART_NUM       UART_NUM_1
+#define PMSA003A_UART_TX_PIN    18   // GPIO18 (TX - not used for PMSA003A)
+#define PMSA003A_UART_RX_PIN    20   // GPIO20 (RX from PMSA003A)
+#define PMSA003A_UART_BAUD      9600
+#define PMSA003A_UART_BUF_SIZE  512
+
 /**
  * @brief Initialize air quality sensor driver
  * 

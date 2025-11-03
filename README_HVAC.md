@@ -6,12 +6,13 @@ This project implements a Zigbee End Device that reads air quality sensors and e
 
 - ESP32-C6 development board (or compatible)
 - Air quality sensors:
-  - Temperature and Humidity sensor (e.g., SHT4x, BME280)
-  - Pressure sensor (e.g., BMP280, BME280)  
-  - Particulate Matter sensor (e.g., PMS5003, SPS30)
-  - VOC Index sensor (e.g., SGP40, BME680)
-  - CO2 sensor (e.g., SCD40, SCD41)
+  - Temperature and Humidity sensor (e.g., SHT4x, BME280) via I2C
+  - Pressure sensor (e.g., BMP280, BME280) via I2C
+  - **PMSA003A Particulate Matter sensor** via UART
+  - VOC Index sensor (e.g., SGP40, BME680) via I2C
+  - CO2 sensor (e.g., SCD40, SCD41) via I2C
 - I2C connection (SDA/SCL pins configurable)
+- UART connection for PMSA003A (RX pin configurable)
 
 ## Features
 
@@ -25,9 +26,11 @@ The Zigbee air quality sensor exposes the following sensor endpoints:
 - **Pressure Measurement Cluster (0x0403)**: Atmospheric pressure in hPa
 
 ### Endpoint 3: Particulate Matter (PM) Sensor
-- **PM2.5 Measurement**: Fine particulate matter (µg/m³)
-- **PM10 Measurement**: Coarse particulate matter (µg/m³)
-- **PM1.0 Measurement**: Ultra-fine particulate matter (µg/m³)
+- **PM2.5 Measurement**: Fine particulate matter (µg/m³) from PMSA003A
+- **PM10 Measurement**: Coarse particulate matter (µg/m³) from PMSA003A
+- **PM1.0 Measurement**: Ultra-fine particulate matter (µg/m³) from PMSA003A
+- **Sensor**: Plantower PMSA003A (UART, 9600 baud)
+- **Update Rate**: ~1 second (automatic)
 
 ### Endpoint 4: VOC Index Sensor
 - **VOC Index** (1-500): Volatile Organic Compounds air quality index
@@ -35,14 +38,33 @@ The Zigbee air quality sensor exposes the following sensor endpoints:
 ### Endpoint 5: CO2 Sensor
 - **CO2 Concentration Cluster (0x040D)**: Carbon dioxide in ppm
 
-## I2C Configuration
+## I2C and UART Configuration
 
-The device communicates with sensors via I2C:
+### I2C Bus (Temperature, Humidity, Pressure, VOC, CO2)
+
+The device communicates with most sensors via I2C:
 
 - **SDA Pin**: GPIO 6 (configurable in `aeris_driver.h`)
 - **SCL Pin**: GPIO 7 (configurable in `aeris_driver.h`)
 - **Frequency**: 100 kHz
 - **Pull-ups**: Internal pull-ups enabled
+
+### UART for PMSA003A (Particulate Matter Sensor)
+
+The PMSA003A sensor uses UART communication:
+
+- **RX Pin**: GPIO 20 (receives data from PMSA003A TX)
+- **TX Pin**: GPIO 18 (not used - PMSA003A is read-only)
+- **Baud Rate**: 9600
+- **Data Format**: 8N1 (8 data bits, no parity, 1 stop bit)
+- **Frame Length**: 32 bytes
+- **Update Rate**: ~1 second (automatic from sensor)
+
+**PMSA003A Data Format:**
+- Start characters: 0x42 0x4D
+- Frame length: 28 data bytes + 2 byte checksum
+- PM1.0, PM2.5, PM10 concentrations (both CF=1 and atmospheric)
+- Particle counts for various size ranges
 
 ## Project Structure
 
@@ -135,8 +157,13 @@ This project provides a framework for air quality sensors. You'll need to implem
 - **BME280**: Combined temp/humidity/pressure
 
 ### Particulate Matter
-- **PMS5003**: Laser-based PM sensor
-- **SPS30**: Sensirion PM sensor (I2C)
+- **PMSA003A** (implemented): Plantower laser PM sensor
+  - UART interface (9600 baud)
+  - Measures PM1.0, PM2.5, PM10
+  - Automatic 1-second updates
+  - Low power consumption
+  - Atmospheric environment correction included
+- **Alternative**: PMS5003 (similar protocol, same manufacturer)
 
 ### VOC Index
 - **SGP40**: VOC sensor with built-in algorithm
@@ -148,12 +175,36 @@ This project provides a framework for air quality sensors. You'll need to implem
 
 ## Implementation Notes
 
-The `aeris_driver.c` file contains stub implementations. You need to:
+The `aeris_driver.c` file contains:
 
-1. Add sensor-specific libraries to `idf_component.yml`
-2. Implement sensor initialization in `aeris_driver_init()`
-3. Implement actual I2C read functions for each sensor
-4. Update the periodic read task to poll all sensors
+1. **PMSA003A implementation** (complete):
+   - UART initialization and configuration
+   - Background task for continuous reading
+   - Frame parsing with checksum validation
+   - Automatic atmospheric environment values
+   - Particle count data available
+
+2. **I2C sensor stubs** (need implementation):
+   - Add sensor-specific libraries to `idf_component.yml`
+   - Implement sensor initialization in `aeris_driver_init()`
+   - Implement actual I2C read functions for each sensor
+   - Update the periodic read task to poll all sensors
+
+### PMSA003A Wiring
+
+```
+PMSA003A Pin → ESP32-C6
+VCC (Pin 1)  → 5V
+GND (Pin 2)  → GND
+SET (Pin 3)  → Not connected (or 5V for continuous mode)
+RX  (Pin 4)  → Not connected
+TX  (Pin 5)  → GPIO 20 (ESP32 UART RX)
+RESET (Pin 6)→ Not connected (or 5V)
+NC  (Pin 7)  → Not connected
+NC  (Pin 8)  → Not connected
+```
+
+**Note**: PMSA003A requires 5V power supply. TX output is 3.3V compatible.
 
 ## Removed Features
 
@@ -175,11 +226,18 @@ All HVAC control logic has been replaced with air quality sensor reading functio
 - Try factory reset (hold button during boot)
 
 ### Sensors not responding
-- Verify I2C wiring (SDA/SCL connections)
-- Check I2C pull-up resistors (usually 4.7kΩ)
-- Verify sensor power supply (usually 3.3V)
-- Use `i2cdetect` to scan for sensor addresses
-- Monitor I2C traffic in logs
+- **I2C sensors**:
+  - Verify I2C wiring (SDA/SCL connections)
+  - Check I2C pull-up resistors (usually 4.7kΩ)
+  - Verify sensor power supply (usually 3.3V)
+  - Use `i2cdetect` to scan for sensor addresses
+  - Monitor I2C traffic in logs
+- **PMSA003A (PM sensor)**:
+  - Verify UART RX connection (PMSA003A TX → GPIO20)
+  - Check 5V power supply to sensor
+  - Ensure baud rate is 9600
+  - Look for "PMSA003A data:" log messages
+  - Check frame checksum errors in logs
 
 ### Values not updating
 - Check that sensors are initialized correctly

@@ -1,5 +1,5 @@
 /*
- * Zigbee Aeris Thermostat Header (renamed from esp_zb_hvac.h)
+ * Zigbee Aeris Air Quality Sensor Header
  */
 
 #ifndef ESP_ZB_AERIS_H
@@ -13,15 +13,14 @@
 #define INSTALLCODE_POLICY_ENABLE       false                                /* enable the install code policy for security */
 #define ED_AGING_TIMEOUT                ESP_ZB_ED_AGING_TIMEOUT_64MIN        /* aging timeout of device */
 #define ED_KEEP_ALIVE                   3000                                 /* 3000 millisecond */
-#define HA_ESP_HVAC_ENDPOINT            1                                    /* HVAC thermostat endpoint */
-#define HA_ESP_ECO_ENDPOINT             2                                    /* Eco mode switch endpoint */
-#define HA_ESP_SWING_ENDPOINT           3                                    /* Swing mode switch endpoint */
-#define HA_ESP_DISPLAY_ENDPOINT         4                                    /* Display control switch endpoint */
-#define HA_ESP_NIGHT_ENDPOINT           5                                    /* Night mode switch endpoint */
-#define HA_ESP_PURIFIER_ENDPOINT        6                                    /* Purifier switch endpoint */
-#define HA_ESP_CLEAN_ENDPOINT           7                                    /* Clean status binary sensor endpoint */
-#define HA_ESP_MUTE_ENDPOINT            8                                    /* Mute switch endpoint */
-#define HA_ESP_ERROR_ENDPOINT           9                                    /* Error/diagnostics binary sensor endpoint */
+
+/* Air Quality Sensor Endpoints */
+#define HA_ESP_TEMP_HUM_ENDPOINT        1                                    /* Temperature and Humidity sensor endpoint */
+#define HA_ESP_PRESSURE_ENDPOINT        2                                    /* Pressure sensor endpoint */
+#define HA_ESP_PM_ENDPOINT              3                                    /* Particulate Matter (PM) sensor endpoint */
+#define HA_ESP_VOC_ENDPOINT             4                                    /* VOC Index sensor endpoint */
+#define HA_ESP_CO2_ENDPOINT             5                                    /* CO2 sensor endpoint */
+
 #define ESP_ZB_PRIMARY_CHANNEL_MASK     ESP_ZB_TRANSCEIVER_ALL_CHANNELS_MASK /* Zigbee primary channel mask use in the example */
 
 /* Button configuration */
@@ -29,7 +28,7 @@
 
 /* Basic manufacturer information */
 #define ESP_MANUFACTURER_NAME "\x09""ESPRESSIF"      /* Customized manufacturer name */
-#define ESP_MODEL_IDENTIFIER "\x07""acw02-z"         /* Customized model identifier */
+#define ESP_MODEL_IDENTIFIER "\x07""aeris-z"         /* Air quality sensor model */
 
 #define ESP_ZB_ZED_CONFIG()                                         \
     {                                                               \

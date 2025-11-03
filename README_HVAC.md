@@ -1,71 +1,61 @@
-# Zigbee HVAC Thermostat Controller
+# Zigbee Air Quality Sensor - Aeris
 
-This project implements a Zigbee End Device that controls an HVAC unit via UART and exposes it as a standard Zigbee thermostat.
+This project implements a Zigbee End Device that reads air quality sensors and exposes them as standard Zigbee sensor endpoints.
 
 ## Hardware Requirements
 
-- ESP32-C6 development board
-- ACW02 HVAC unit (or compatible)
-- UART connection (TX/RX pins 16/17)
+- ESP32-C6 development board (or compatible)
+- Air quality sensors:
+  - Temperature and Humidity sensor (e.g., SHT4x, BME280)
+  - Pressure sensor (e.g., BMP280, BME280)  
+  - Particulate Matter sensor (e.g., PMS5003, SPS30)
+  - VOC Index sensor (e.g., SGP40, BME680)
+  - CO2 sensor (e.g., SCD40, SCD41)
+- I2C connection (SDA/SCL pins configurable)
 
 ## Features
 
-The Zigbee thermostat exposes the following capabilities:
+The Zigbee air quality sensor exposes the following sensor endpoints:
 
-### Standard Thermostat Cluster (0x0201)
-- **System Mode**: Off, Auto, Cool, Heat, Dry, Fan
-- **Temperature Control**: 16-31°C (configurable setpoint)
-- **Local Temperature**: Current room temperature from HVAC unit
-- **Occupied Cooling/Heating Setpoint**: Target temperature
+### Endpoint 1: Temperature and Humidity Sensor
+- **Temperature Measurement Cluster (0x0402)**: Temperature in °C
+- **Relative Humidity Measurement Cluster (0x0405)**: Humidity in %
 
-### Fan Control Cluster (0x0202)
-- **Fan Mode**: Auto, Low, Medium, High, Smart/Max
+### Endpoint 2: Pressure Sensor
+- **Pressure Measurement Cluster (0x0403)**: Atmospheric pressure in hPa
 
-### Custom Attributes (Manufacturer-Specific)
-- **Eco Mode** (0xF000): Energy-saving mode (only works in Cool mode)
-- **Swing Mode** (0xF001): Vertical air flow swing
-- **Display** (0xF002): HVAC unit display on/off
-- **Error Text** (0xF003): Error messages from HVAC unit
+### Endpoint 3: Particulate Matter (PM) Sensor
+- **PM2.5 Measurement**: Fine particulate matter (µg/m³)
+- **PM10 Measurement**: Coarse particulate matter (µg/m³)
+- **PM1.0 Measurement**: Ultra-fine particulate matter (µg/m³)
 
-## UART Protocol
+### Endpoint 4: VOC Index Sensor
+- **VOC Index** (1-500): Volatile Organic Compounds air quality index
 
-The device communicates with the HVAC unit using a proprietary protocol at 9600 baud:
+### Endpoint 5: CO2 Sensor
+- **CO2 Concentration Cluster (0x040D)**: Carbon dioxide in ppm
 
-- **TX Pin**: GPIO 16
-- **RX Pin**: GPIO 17
-- **Baud Rate**: 9600
-- **Data Bits**: 8
-- **Parity**: None
-- **Stop Bits**: 1
+## I2C Configuration
 
-### Frame Format
+The device communicates with sensors via I2C:
 
-All frames start with `0x7A 0x7A` and end with a 16-bit CRC.
-
-**Command Frame (28 bytes)**:
-```
-[0x7A][0x7A][Header][Mode][Temp][Fan][Swing][Options][...][CRC_H][CRC_L]
-```
-
-**Status Request (13 bytes)**:
-```
-0x7A 0x7A 0x21 0xD5 0x0C 0x00 0x00 0xA2 0x0A 0x0A 0xFE 0x29
-```
-
-**Keepalive (13 bytes)**:
-```
-0x7A 0x7A 0x21 0xD5 0x0C 0x00 0x00 0xAB 0x0A 0x0A 0xFC 0xF9
-```
+- **SDA Pin**: GPIO 6 (configurable in `aeris_driver.h`)
+- **SCL Pin**: GPIO 7 (configurable in `aeris_driver.h`)
+- **Frequency**: 100 kHz
+- **Pull-ups**: Internal pull-ups enabled
 
 ## Project Structure
 
 ```
-acw02_zb/
+Aeris_zb/
 ├── main/
-│   ├── esp_zb_aeris.c         # Main Zigbee application (renamed from esp_zb_hvac.c)
-│   ├── esp_zb_light.h         # Zigbee configuration header
-│   ├── aeris_driver.c         # Aeris/ACW02 UART driver implementation (renamed from hvac_driver.c)
-│   ├── aeris_driver.h         # Aeris driver header (renamed from hvac_driver.h)
+│   ├── esp_zb_aeris.c         # Main Zigbee application
+│   ├── esp_zb_aeris.h         # Zigbee configuration header
+│   ├── aeris_driver.c         # Air quality sensor driver implementation
+│   ├── aeris_driver.h         # Sensor driver header
+│   ├── esp_zb_ota.c           # OTA update support
+│   ├── esp_zb_ota.h           # OTA header
+│   ├── board.h                # Board pin definitions
 │   ├── CMakeLists.txt         # Component build configuration
 │   └── idf_component.yml      # Component dependencies
 ├── CMakeLists.txt             # Project CMakeLists
@@ -95,18 +85,20 @@ acw02_zb/
 ### Zigbee Configuration
 
 The device is configured as a Zigbee End Device (ZED):
-- **Endpoint**: 1
+- **Endpoints**: 1-5 (one per sensor type)
 - **Profile**: Home Automation (0x0104)
-- **Device ID**: Thermostat (0x0301)
+- **Device IDs**: Various sensor types (Temperature, Humidity, Pressure, etc.)
 - **Channel Mask**: All channels
 
-### HVAC Settings
+### Sensor Configuration
 
-Temperature range: 16-31°C (mapped to 61-88°F internally)
+Configure sensor I2C addresses and settings in `aeris_driver.c`:
+- Default I2C pins: SDA=GPIO6, SCL=GPIO7
+- Adjust pins in `aeris_driver.h` if needed
 
 ### Joining the Network
 
-On first boot, the device will automatically enter network steering mode. The LED will blink while searching for a network. Once joined, the device will save the network credentials and automatically rejoin on subsequent boots.
+On first boot, the device will automatically enter network steering mode. Once joined, the device will save the network credentials and automatically rejoin on subsequent boots.
 
 ## Usage
 
@@ -115,61 +107,64 @@ On first boot, the device will automatically enter network steering mode. The LE
 1. Put your coordinator in pairing mode
 2. Power on the ESP32-C6 device
 3. Wait for the device to join (check logs)
-4. The thermostat will appear with the following entities:
-   - System Mode (Off/Auto/Cool/Heat/Dry/Fan)
-   - Target Temperature (16-31°C)
-   - Current Temperature
-   - Fan Speed
-   - Eco Mode switch
-   - Swing Mode switch
-   - Display switch
-   - Error status
+4. The air quality sensor will appear with the following entities:
+   - Temperature (°C)
+   - Humidity (%)
+   - Pressure (hPa)
+   - PM1.0, PM2.5, PM10 (µg/m³)
+   - VOC Index (1-500)
+   - CO2 (ppm)
 
-### Control Examples
+### Sensor Reading Updates
 
-**Set cooling mode at 24°C:**
-- Set system_mode = "cool"
-- Set occupied_cooling_setpoint = 2400 (24.00°C in centidegrees)
+- Sensors are polled periodically (configurable interval)
+- Values are reported to the Zigbee coordinator when they change
+- All endpoints support binding and reporting configuration
 
-**Enable eco mode:**
-- Set eco_mode attribute (0xF000) = true
-- Note: Only works when system_mode is "cool"
+## Supported Sensors
 
-**Adjust fan speed:**
-- Set fan_mode in Fan Control cluster
+This project provides a framework for air quality sensors. You'll need to implement the actual sensor drivers:
+
+### Temperature/Humidity
+- **SHT4x** (recommended): High accuracy, low power
+- **BME280**: Temperature, humidity, and pressure in one chip
+- **DHT22**: Budget option
+
+### Pressure
+- **BMP280**: Barometric pressure sensor
+- **BME280**: Combined temp/humidity/pressure
+
+### Particulate Matter
+- **PMS5003**: Laser-based PM sensor
+- **SPS30**: Sensirion PM sensor (I2C)
+
+### VOC Index
+- **SGP40**: VOC sensor with built-in algorithm
+- **BME680**: VOC + temperature/humidity/pressure
+
+### CO2
+- **SCD40**: NDIR CO2 sensor (400-2000 ppm)
+- **SCD41**: Extended range (400-5000 ppm)
+
+## Implementation Notes
+
+The `aeris_driver.c` file contains stub implementations. You need to:
+
+1. Add sensor-specific libraries to `idf_component.yml`
+2. Implement sensor initialization in `aeris_driver_init()`
+3. Implement actual I2C read functions for each sensor
+4. Update the periodic read task to poll all sensors
 
 ## Removed Features
 
-This project was adapted from the `ZigbeeMultiSensor` example. The following endpoints and features were removed:
+This project was adapted from an HVAC controller. The following features were removed:
 
-- ❌ BME280 environmental sensor endpoint
-- ❌ LED strip control endpoint
-- ❌ GPIO LED control endpoint
-- ❌ Button sensor endpoint
-- ❌ Rain gauge sensor endpoint
+- ❌ HVAC thermostat control
+- ❌ Fan speed control
+- ❌ Eco/Night/Swing modes
+- ❌ UART communication with HVAC unit
 
-All sensor and LED control logic has been replaced with HVAC thermostat functionality.
-
-## HVAC Driver Details
-
-### State Management
-
-The driver maintains a local copy of the HVAC state and synchronizes it with:
-1. Commands sent to the HVAC unit via UART
-2. Status responses received from the HVAC unit
-3. Zigbee attribute updates
-
-### Periodic Updates
-
-- **Status Request**: Every 30 seconds
-- **Keepalive**: Every 60 seconds
-- **Zigbee Sync**: After every state change + periodic updates
-
-### Error Handling
-
-- CRC validation on all received frames
-- Retry logic for failed commands (future enhancement)
-- Error text attribute reports HVAC errors to coordinator
+All HVAC control logic has been replaced with air quality sensor reading functionality.
 
 ## Troubleshooting
 
@@ -177,18 +172,25 @@ The driver maintains a local copy of the HVAC state and synchronizes it with:
 - Check that Zigbee coordinator is in pairing mode
 - Verify ESP32-C6 is powered correctly
 - Check serial logs for error messages
-- Try factory reset (hold button during boot - if button is implemented)
+- Try factory reset (hold button during boot)
 
-### HVAC not responding
-- Verify UART wiring (TX ↔ RX crossover)
-- Check baud rate is 9600
-- Monitor UART traffic in logs
-- Verify HVAC unit is powered on
+### Sensors not responding
+- Verify I2C wiring (SDA/SCL connections)
+- Check I2C pull-up resistors (usually 4.7kΩ)
+- Verify sensor power supply (usually 3.3V)
+- Use `i2cdetect` to scan for sensor addresses
+- Monitor I2C traffic in logs
 
-### Temperature not updating
-- HVAC may not report ambient temperature in all modes
-- Check that status requests are being sent every 30s
-- Verify frame CRC is correct
+### Values not updating
+- Check that sensors are initialized correctly
+- Verify periodic read task is running
+- Check log output for sensor read errors
+- Ensure reporting is configured on Zigbee coordinator
+
+### Build errors
+- Make sure ESP-IDF v5.5.1+ is installed
+- Run `idf.py fullclean` and rebuild
+- Check that all sensor libraries are in `idf_component.yml`
 
 ## License
 
@@ -197,7 +199,7 @@ This code is based on Espressif's Zigbee examples and inherits their licensing.
 ## Credits
 
 - Base Zigbee framework: Espressif ESP-IDF examples
-- HVAC protocol: Reverse-engineered from ACW02 ESPHome component
+- Air quality sensor concept: Community contributions
 - Original ESPHome component: See `CodeToReusePartially/acw02_esphome/`
 
 ## Future Enhancements

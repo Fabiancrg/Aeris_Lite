@@ -32,6 +32,19 @@ static const char *TAG = "AERIS_DRIVER";
 /* LPS22HB Constants */
 #define LPS22HB_DEVICE_ID       0xB1  // WHO_AM_I expected value
 
+/* SGP41 Commands */
+#define SGP41_CMD_EXECUTE_CONDITIONING  0x2612  // Execute conditioning (10s)
+#define SGP41_CMD_MEASURE_RAW_SIGNALS   0x2619  // Measure raw signals (50ms)
+#define SGP41_CMD_EXECUTE_SELF_TEST     0x280E  // Execute self test (320ms)
+#define SGP41_CMD_TURN_HEATER_OFF       0x3615  // Turn heater off (1ms)
+#define SGP41_CMD_GET_SERIAL_NUMBER     0x3682  // Get serial number (1ms)
+
+/* SGP41 timing constants (in ms) */
+#define SGP41_CONDITIONING_TIME_MS      10
+#define SGP41_MEASURE_TIME_MS           50
+#define SGP41_SELFTEST_TIME_MS          320
+#define SGP41_STARTUP_TIME_MS           170  // Time after power-on
+
 /* PMSA003A frame structure */
 #define PMSA003A_FRAME_LENGTH   32
 #define PMSA003A_START_CHAR_1   0x42
@@ -61,6 +74,9 @@ static aeris_sensor_state_t current_state = {
     .pm2_5_ug_m3 = 0.0f,
     .pm10_ug_m3 = 0.0f,
     .voc_index = 100,
+    .nox_index = 1,
+    .voc_raw = 0,
+    .nox_raw = 0,
     .co2_ppm = 400,
     .sensor_error = false,
     .error_text = ""
@@ -72,6 +88,182 @@ static bool pmsa003a_data_valid = false;
 
 /* LPS22HB sensor state */
 static bool lps22hb_initialized = false;
+
+/* SGP41 sensor state */
+static bool sgp41_initialized = false;
+static uint64_t sgp41_serial_number = 0;
+static TickType_t sgp41_last_measure_time = 0;
+
+/**
+ * @brief Calculate CRC8 for SGP41 (polynomial 0x31, init 0xFF)
+ */
+static uint8_t sgp41_crc8(const uint8_t *data, size_t len)
+{
+    uint8_t crc = 0xFF;
+    for (size_t i = 0; i < len; i++) {
+        crc ^= data[i];
+        for (uint8_t bit = 0; bit < 8; bit++) {
+            if (crc & 0x80) {
+                crc = (crc << 1) ^ 0x31;
+            } else {
+                crc = (crc << 1);
+            }
+        }
+    }
+    return crc;
+}
+
+/**
+ * @brief Send command to SGP41 and read response
+ */
+static esp_err_t sgp41_send_command(uint16_t cmd, const uint8_t *params, size_t param_len,
+                                     uint8_t *response, size_t response_len, uint32_t delay_ms)
+{
+    uint8_t cmd_buf[2];
+    cmd_buf[0] = cmd >> 8;
+    cmd_buf[1] = cmd & 0xFF;
+    
+    // Send command
+    esp_err_t ret = i2c_master_write_to_device(AERIS_I2C_NUM, SGP41_I2C_ADDR,
+                                                cmd_buf, 2, pdMS_TO_TICKS(1000));
+    if (ret != ESP_OK) {
+        ESP_LOGE(TAG, "SGP41 send command 0x%04X failed: %s", cmd, esp_err_to_name(ret));
+        return ret;
+    }
+    
+    // Send parameters if any (each parameter is 2 bytes + 1 CRC)
+    if (params && param_len > 0) {
+        for (size_t i = 0; i < param_len; i += 2) {
+            uint8_t param_with_crc[3];
+            param_with_crc[0] = params[i];
+            param_with_crc[1] = params[i + 1];
+            param_with_crc[2] = sgp41_crc8(&params[i], 2);
+            
+            ret = i2c_master_write_to_device(AERIS_I2C_NUM, SGP41_I2C_ADDR,
+                                            param_with_crc, 3, pdMS_TO_TICKS(1000));
+            if (ret != ESP_OK) {
+                ESP_LOGE(TAG, "SGP41 send param failed: %s", esp_err_to_name(ret));
+                return ret;
+            }
+        }
+    }
+    
+    // Wait for measurement
+    if (delay_ms > 0) {
+        vTaskDelay(pdMS_TO_TICKS(delay_ms));
+    }
+    
+    // Read response if expected
+    if (response && response_len > 0) {
+        ret = i2c_master_read_from_device(AERIS_I2C_NUM, SGP41_I2C_ADDR,
+                                          response, response_len, pdMS_TO_TICKS(1000));
+        if (ret != ESP_OK) {
+            ESP_LOGE(TAG, "SGP41 read response failed: %s", esp_err_to_name(ret));
+            return ret;
+        }
+        
+        // Verify CRC for each 2-byte word
+        for (size_t i = 0; i < response_len; i += 3) {
+            uint8_t crc_calc = sgp41_crc8(&response[i], 2);
+            if (crc_calc != response[i + 2]) {
+                ESP_LOGE(TAG, "SGP41 CRC mismatch: calc=0x%02X, recv=0x%02X", 
+                         crc_calc, response[i + 2]);
+                return ESP_ERR_INVALID_CRC;
+            }
+        }
+    }
+    
+    return ESP_OK;
+}
+
+/**
+ * @brief Initialize SGP41 sensor
+ */
+static esp_err_t sgp41_init(void)
+{
+    ESP_LOGI(TAG, "Initializing SGP41 VOC/NOx sensor...");
+    
+    // Wait for sensor startup
+    vTaskDelay(pdMS_TO_TICKS(SGP41_STARTUP_TIME_MS));
+    
+    // Get serial number
+    uint8_t serial_data[9];  // 3 words of 2 bytes + CRC each
+    esp_err_t ret = sgp41_send_command(SGP41_CMD_GET_SERIAL_NUMBER, NULL, 0,
+                                        serial_data, sizeof(serial_data), 1);
+    if (ret != ESP_OK) {
+        ESP_LOGE(TAG, "SGP41 not responding on I2C");
+        return ret;
+    }
+    
+    // Extract serial number (remove CRC bytes)
+    sgp41_serial_number = ((uint64_t)serial_data[0] << 40) |
+                          ((uint64_t)serial_data[1] << 32) |
+                          ((uint64_t)serial_data[3] << 24) |
+                          ((uint64_t)serial_data[4] << 16) |
+                          ((uint64_t)serial_data[6] << 8) |
+                          ((uint64_t)serial_data[7]);
+    
+    ESP_LOGI(TAG, "SGP41 detected, serial: 0x%012llX", sgp41_serial_number);
+    
+    // Execute self-test
+    uint8_t test_result[3];
+    ret = sgp41_send_command(SGP41_CMD_EXECUTE_SELF_TEST, NULL, 0,
+                            test_result, sizeof(test_result), SGP41_SELFTEST_TIME_MS);
+    if (ret != ESP_OK) {
+        ESP_LOGE(TAG, "SGP41 self-test failed");
+        return ret;
+    }
+    
+    uint16_t test_value = (test_result[0] << 8) | test_result[1];
+    if (test_value != 0xD400) {  // 0xD400 = all tests passed
+        ESP_LOGW(TAG, "SGP41 self-test result: 0x%04X (expected 0xD400)", test_value);
+    } else {
+        ESP_LOGI(TAG, "SGP41 self-test passed");
+    }
+    
+    sgp41_initialized = true;
+    sgp41_last_measure_time = xTaskGetTickCount();
+    
+    ESP_LOGI(TAG, "SGP41 initialized successfully");
+    return ESP_OK;
+}
+
+/**
+ * @brief Read raw VOC and NOx signals from SGP41
+ */
+static esp_err_t sgp41_measure_raw_signals(uint16_t *voc_raw, uint16_t *nox_raw,
+                                           float rh_percent, float temp_c)
+{
+    if (!sgp41_initialized) {
+        return ESP_ERR_INVALID_STATE;
+    }
+    
+    // Convert RH and temperature to SGP41 format (RH% * 65535 / 100, Temp°C * 65535 / 175)
+    uint16_t rh_ticks = (uint16_t)((rh_percent * 65535.0f) / 100.0f);
+    uint16_t temp_ticks = (uint16_t)(((temp_c + 45.0f) * 65535.0f) / 175.0f);
+    
+    // Prepare parameters: RH (2 bytes) + Temp (2 bytes)
+    uint8_t params[4];
+    params[0] = rh_ticks >> 8;
+    params[1] = rh_ticks & 0xFF;
+    params[2] = temp_ticks >> 8;
+    params[3] = temp_ticks & 0xFF;
+    
+    // Read raw signals
+    uint8_t response[6];  // VOC (2 bytes + CRC) + NOx (2 bytes + CRC)
+    esp_err_t ret = sgp41_send_command(SGP41_CMD_MEASURE_RAW_SIGNALS, params, 4,
+                                        response, sizeof(response), SGP41_MEASURE_TIME_MS);
+    if (ret != ESP_OK) {
+        return ret;
+    }
+    
+    *voc_raw = (response[0] << 8) | response[1];
+    *nox_raw = (response[3] << 8) | response[4];
+    
+    sgp41_last_measure_time = xTaskGetTickCount();
+    
+    return ESP_OK;
+}
 
 /**
  * @brief Write to LPS22HB register
@@ -389,6 +581,13 @@ esp_err_t aeris_driver_init(void)
             ESP_LOGW(TAG, "Failed to initialize LPS22HB: %s", esp_err_to_name(ret));
             ESP_LOGW(TAG, "Continuing without pressure sensor");
         }
+        
+        // Initialize SGP41 VOC/NOx sensor
+        ret = sgp41_init();
+        if (ret != ESP_OK) {
+            ESP_LOGW(TAG, "Failed to initialize SGP41: %s", esp_err_to_name(ret));
+            ESP_LOGW(TAG, "Continuing without VOC/NOx sensor");
+        }
     }
     
     // Initialize PMSA003A UART
@@ -407,7 +606,6 @@ esp_err_t aeris_driver_init(void)
     
     // TODO: Initialize other sensors here
     // - Temperature/Humidity sensor (e.g., SHT4x, BME280)
-    // - VOC sensor (e.g., SGP40, BME680)
     // - CO2 sensor (e.g., SCD40, SCD41)
     
     ESP_LOGI(TAG, "Aeris driver initialized successfully");
@@ -515,13 +713,83 @@ esp_err_t aeris_read_voc(uint16_t *voc_index)
         return ESP_ERR_INVALID_ARG;
     }
     
-    // TODO: Implement actual sensor reading
-    // Example for SGP40 or BME680
+    // Read raw VOC signal from SGP41
+    uint16_t voc_raw, nox_raw;
+    esp_err_t ret = sgp41_measure_raw_signals(&voc_raw, &nox_raw,
+                                               current_state.humidity_percent,
+                                               current_state.temperature_c);
+    if (ret != ESP_OK) {
+        ESP_LOGW(TAG, "Failed to read SGP41");
+        *voc_index = current_state.voc_index;
+        return ret;
+    }
     
-    *voc_index = current_state.voc_index;
+    // Store raw values
+    current_state.voc_raw = voc_raw;
+    current_state.nox_raw = nox_raw;
     
-    ESP_LOGD(TAG, "VOC Index: %d", *voc_index);
+    // TODO: Process raw signal with Sensirion Gas Index Algorithm
+    // For now, return a placeholder based on raw value
+    // Typical raw VOC range: 20000-60000, we map to index 1-500
+    if (voc_raw > 20000) {
+        *voc_index = (uint16_t)(((voc_raw - 20000) * 500) / 40000);
+        if (*voc_index > 500) *voc_index = 500;
+    } else {
+        *voc_index = 1;
+    }
+    
+    current_state.voc_index = *voc_index;
+    
+    ESP_LOGD(TAG, "VOC raw: %d, index: %d", voc_raw, *voc_index);
     return ESP_OK;
+}
+
+/**
+ * @brief Read NOx Index
+ */
+esp_err_t aeris_read_nox(uint16_t *nox_index)
+{
+    if (!nox_index) {
+        return ESP_ERR_INVALID_ARG;
+    }
+    
+    // NOx data is already read with VOC, use stored value
+    uint16_t nox_raw = current_state.nox_raw;
+    
+    // TODO: Process raw signal with Sensirion Gas Index Algorithm
+    // For now, return a placeholder based on raw value
+    // Typical raw NOx range: 10000-50000, we map to index 1-500
+    if (nox_raw > 10000) {
+        *nox_index = (uint16_t)(((nox_raw - 10000) * 500) / 40000);
+        if (*nox_index > 500) *nox_index = 500;
+    } else {
+        *nox_index = 1;
+    }
+    
+    current_state.nox_index = *nox_index;
+    
+    ESP_LOGD(TAG, "NOx raw: %d, index: %d", nox_raw, *nox_index);
+    return ESP_OK;
+}
+
+/**
+ * @brief Read VOC and NOx raw signals
+ */
+esp_err_t aeris_read_voc_nox_raw(uint16_t *voc_raw, uint16_t *nox_raw)
+{
+    if (!voc_raw || !nox_raw) {
+        return ESP_ERR_INVALID_ARG;
+    }
+    
+    esp_err_t ret = sgp41_measure_raw_signals(voc_raw, nox_raw,
+                                               current_state.humidity_percent,
+                                               current_state.temperature_c);
+    if (ret == ESP_OK) {
+        current_state.voc_raw = *voc_raw;
+        current_state.nox_raw = *nox_raw;
+    }
+    
+    return ret;
 }
 
 /**

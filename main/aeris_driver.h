@@ -25,6 +25,9 @@ typedef struct {
     float pm2_5_ug_m3;         // PM2.5 concentration in µg/m³
     float pm10_ug_m3;          // PM10 concentration in µg/m³
     uint16_t voc_index;        // VOC Index (1-500)
+    uint16_t nox_index;        // NOx Index (1-500)
+    uint16_t voc_raw;          // VOC raw signal
+    uint16_t nox_raw;          // NOx raw signal
     uint16_t co2_ppm;          // CO2 concentration in ppm
     bool sensor_error;         // Sensor error flag
     char error_text[64];       // Error description
@@ -38,6 +41,9 @@ typedef struct {
 
 /* LPS22HB Pressure Sensor I2C Address */
 #define LPS22HB_I2C_ADDR        0x5C  // 0x5C when SA0=0, 0x5D when SA0=1
+
+/* SGP41 VOC/NOx Sensor I2C Address */
+#define SGP41_I2C_ADDR          0x59  // Fixed I2C address
 
 /* UART Configuration for PMSA003A */
 #define PMSA003A_UART_NUM       UART_NUM_1
@@ -95,6 +101,23 @@ esp_err_t aeris_read_pm(float *pm1_0, float *pm2_5, float *pm10);
  * @return ESP_OK on success
  */
 esp_err_t aeris_read_voc(uint16_t *voc_index);
+
+/**
+ * @brief Read NOx Index
+ * 
+ * @param nox_index Pointer to NOx Index value
+ * @return ESP_OK on success
+ */
+esp_err_t aeris_read_nox(uint16_t *nox_index);
+
+/**
+ * @brief Read VOC and NOx raw signals from SGP41
+ * 
+ * @param voc_raw Pointer to VOC raw signal
+ * @param nox_raw Pointer to NOx raw signal
+ * @return ESP_OK on success
+ */
+esp_err_t aeris_read_voc_nox_raw(uint16_t *voc_raw, uint16_t *nox_raw);
 
 /**
  * @brief Read CO2 concentration

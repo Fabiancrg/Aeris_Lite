@@ -9,7 +9,7 @@ This project implements a Zigbee End Device that reads air quality sensors and e
   - Temperature and Humidity sensor (e.g., SHT4x, BME280) via I2C
   - **LPS22HB Pressure sensor** via I2C
   - **PMSA003A Particulate Matter sensor** via UART
-  - VOC Index sensor (e.g., SGP40, BME680) via I2C
+  - **SGP41 VOC and NOx sensor** via I2C
   - CO2 sensor (e.g., SCD40, SCD41) via I2C
 - I2C connection (SDA/SCL pins configurable)
 - UART connection for PMSA003A (RX pin configurable)
@@ -38,6 +38,11 @@ The Zigbee air quality sensor exposes the following sensor endpoints:
 
 ### Endpoint 4: VOC Index Sensor
 - **VOC Index** (1-500): Volatile Organic Compounds air quality index
+- **NOx Index** (1-500): Nitrogen Oxides air quality index
+- **Sensor**: Sensirion SGP41 (I2C)
+- **Raw signals**: VOC and NOx raw values available
+- **Update Rate**: 1 second recommended
+- **Note**: Requires temperature/humidity compensation
 
 ### Endpoint 5: CO2 Sensor
 - **CO2 Concentration Cluster (0x040D)**: Carbon dioxide in ppm
@@ -55,6 +60,7 @@ The device communicates with most sensors via I2C:
 
 **I2C Addresses:**
 - LPS22HB (Pressure): 0x5C (default, SA0=0) or 0x5D (SA0=1)
+- SGP41 (VOC/NOx): 0x59 (fixed address)
 
 ### UART for PMSA003A (Particulate Matter Sensor)
 
@@ -179,8 +185,17 @@ This project provides a framework for air quality sensors. You'll need to implem
 - **Alternative**: PMS5003 (similar protocol, same manufacturer)
 
 ### VOC Index
-- **SGP40**: VOC sensor with built-in algorithm
-- **BME680**: VOC + temperature/humidity/pressure
+- **SGP41** (implemented): Sensirion VOC and NOx sensor
+  - I2C interface (address 0x59)
+  - Dual gas sensing: VOC + NOx
+  - Raw signal output (requires algorithm)
+  - Temperature/humidity compensation
+  - Built-in heater for measurement
+  - Low power: 2.6 mA average @ 1Hz
+  - Serial number readout
+  - Self-test capability
+- **Note**: Full Gas Index Algorithm integration recommended for production
+- **Alternative**: SGP40 (VOC only), BME680 (combo sensor)
 
 ### CO2
 - **SCD40**: NDIR CO2 sensor (400-2000 ppm)
@@ -205,9 +220,17 @@ The `aeris_driver.c` file contains:
    - Pressure reading in hPa
    - Temperature reading included
 
-3. **I2C sensor stubs** (need implementation):
+3. **SGP41 implementation** (complete):
+   - I2C initialization and device detection
+   - Serial number readout and verification
+   - Self-test execution
+   - Raw VOC and NOx signal measurement
+   - Temperature/humidity compensation support
+   - CRC8 validation on all data
+   - Placeholder index calculation (needs Gas Index Algorithm)
+
+4. **I2C sensor stubs** (need implementation):
    - Temperature/Humidity sensor
-   - VOC sensor
    - CO2 sensor
 
 ### PMSA003A Wiring
@@ -239,6 +262,27 @@ SA0         → GND (for address 0x5C) or 3.3V (for 0x5D)
 
 **Note**: LPS22HB operates at 1.7-3.6V. Use 3.3V supply.
 
+### SGP41 Wiring
+
+```
+SGP41 Pin → ESP32-C6
+VDD       → 3.3V
+GND       → GND
+SCL       → GPIO 7 (I2C SCL)
+SDA       → GPIO 6 (I2C SDA)
+```
+
+**Note**: SGP41 operates at 1.7-3.6V. Use 3.3V supply. No external pull-ups needed on most breakout boards.
+
+### Important: Gas Index Algorithm
+
+The SGP41 currently uses a **simplified placeholder** for VOC/NOx index calculation. For production use, integrate Sensirion's **Gas Index Algorithm**:
+
+- Download from: https://github.com/Sensirion/gas-index-algorithm
+- Provides proper VOC Index (1-500) and NOx Index (1-500)
+- Requires learning period (~10 minutes for VOC, ~12 hours for NOx)
+- Handles baseline tracking and auto-calibration
+
 ## Removed Features
 
 This project was adapted from an HVAC controller. The following features were removed:
@@ -267,6 +311,9 @@ All HVAC control logic has been replaced with air quality sensor reading functio
   - Monitor I2C traffic in logs
   - **LPS22HB**: Check WHO_AM_I register (should be 0xB1)
   - **LPS22HB**: Verify address 0x5C or 0x5D (depends on SA0 pin)
+  - **SGP41**: Check serial number readout
+  - **SGP41**: Verify self-test passes (result 0xD400)
+  - **SGP41**: Ensure temperature/humidity data is available for compensation
 - **PMSA003A (PM sensor)**:
   - Verify UART RX connection (PMSA003A TX → GPIO20)
   - Check 5V power supply to sensor

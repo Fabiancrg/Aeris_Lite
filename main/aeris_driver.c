@@ -54,6 +54,31 @@ static const char *TAG = "AERIS_DRIVER";
 #define SGP41_SELFTEST_TIME_MS          320
 #define SGP41_STARTUP_TIME_MS           170  // Time after power-on
 
+/* SCD40 Commands */
+#define SCD40_CMD_START_PERIODIC_MEASUREMENT    0x21B1  // Start periodic measurement
+#define SCD40_CMD_READ_MEASUREMENT              0xEC05  // Read measurement
+#define SCD40_CMD_STOP_PERIODIC_MEASUREMENT     0x3F86  // Stop periodic measurement
+#define SCD40_CMD_SET_TEMPERATURE_OFFSET        0x241D  // Set temperature offset
+#define SCD40_CMD_GET_TEMPERATURE_OFFSET        0x2318  // Get temperature offset
+#define SCD40_CMD_SET_SENSOR_ALTITUDE           0x2427  // Set sensor altitude
+#define SCD40_CMD_GET_SENSOR_ALTITUDE           0x2322  // Get sensor altitude
+#define SCD40_CMD_SET_AMBIENT_PRESSURE          0xE000  // Set ambient pressure
+#define SCD40_CMD_PERFORM_FORCED_RECALIBRATION  0x362F  // Perform forced recalibration
+#define SCD40_CMD_SET_AUTOMATIC_SELF_CALIB      0x2416  // Set automatic self-calibration
+#define SCD40_CMD_GET_AUTOMATIC_SELF_CALIB      0x2313  // Get automatic self-calibration
+#define SCD40_CMD_GET_DATA_READY_STATUS         0xE4B8  // Get data ready status
+#define SCD40_CMD_PERSIST_SETTINGS              0x3615  // Persist settings
+#define SCD40_CMD_GET_SERIAL_NUMBER             0x3682  // Get serial number
+#define SCD40_CMD_PERFORM_SELF_TEST             0x3639  // Perform self test
+#define SCD40_CMD_PERFORM_FACTORY_RESET         0x3632  // Perform factory reset
+#define SCD40_CMD_REINIT                        0x3646  // Re-initialization
+
+/* SCD40 timing constants (in ms) */
+#define SCD40_MEASUREMENT_INTERVAL_MS   5000   // Measurement interval (5 seconds)
+#define SCD40_INITIAL_STARTUP_MS        1000   // Initial startup time
+#define SCD40_STOP_PERIODIC_MS          500    // Time to stop periodic measurement
+#define SCD40_READ_MEASUREMENT_MS       1      // Time to read measurement
+
 /* PMSA003A frame structure */
 #define PMSA003A_FRAME_LENGTH   32
 #define PMSA003A_START_CHAR_1   0x42
@@ -106,6 +131,11 @@ static bool lps22hb_initialized = false;
 static bool sgp41_initialized = false;
 static uint64_t sgp41_serial_number = 0;
 static TickType_t sgp41_last_measure_time = 0;
+
+/* SCD40 sensor state */
+static bool scd40_initialized = false;
+static uint64_t scd40_serial_number = 0;
+static bool scd40_data_ready = false;
 
 /**
  * @brief Calculate CRC8 for SHT45 and SGP41 (polynomial 0x31, init 0xFF)
@@ -236,6 +266,182 @@ static esp_err_t sht45_read_temp_humidity(float *temp_c, float *humidity_percent
     if (*humidity_percent < 0.0f) *humidity_percent = 0.0f;
     if (*humidity_percent > 100.0f) *humidity_percent = 100.0f;
     
+    return ESP_OK;
+}
+
+/**
+ * @brief Send command to SCD40 and read response
+ */
+static esp_err_t scd40_send_command(uint16_t cmd, uint8_t *response, size_t response_len, uint32_t delay_ms)
+{
+    uint8_t cmd_buf[2];
+    cmd_buf[0] = cmd >> 8;
+    cmd_buf[1] = cmd & 0xFF;
+    
+    // Send command
+    esp_err_t ret = i2c_master_write_to_device(AERIS_I2C_NUM, SCD40_I2C_ADDR,
+                                                cmd_buf, 2, pdMS_TO_TICKS(1000));
+    if (ret != ESP_OK) {
+        ESP_LOGE(TAG, "SCD40 send command 0x%04X failed: %s", cmd, esp_err_to_name(ret));
+        return ret;
+    }
+    
+    // Wait for command execution
+    if (delay_ms > 0) {
+        vTaskDelay(pdMS_TO_TICKS(delay_ms));
+    }
+    
+    // Read response if expected
+    if (response && response_len > 0) {
+        ret = i2c_master_read_from_device(AERIS_I2C_NUM, SCD40_I2C_ADDR,
+                                          response, response_len, pdMS_TO_TICKS(1000));
+        if (ret != ESP_OK) {
+            ESP_LOGE(TAG, "SCD40 read response failed: %s", esp_err_to_name(ret));
+            return ret;
+        }
+        
+        // Verify CRC for each 2-byte word (every 3 bytes: 2 data + 1 CRC)
+        for (size_t i = 0; i < response_len; i += 3) {
+            uint8_t crc_calc = sensirion_crc8(&response[i], 2);
+            if (crc_calc != response[i + 2]) {
+                ESP_LOGE(TAG, "SCD40 CRC mismatch at byte %d: calc=0x%02X, recv=0x%02X", 
+                         i, crc_calc, response[i + 2]);
+                return ESP_ERR_INVALID_CRC;
+            }
+        }
+    }
+    
+    return ESP_OK;
+}
+
+/**
+ * @brief Initialize SCD40 CO2 sensor
+ */
+static esp_err_t scd40_init(void)
+{
+    ESP_LOGI(TAG, "Initializing SCD40 CO2 sensor...");
+    
+    // Wait for sensor startup
+    vTaskDelay(pdMS_TO_TICKS(SCD40_INITIAL_STARTUP_MS));
+    
+    // Stop any ongoing periodic measurement
+    esp_err_t ret = scd40_send_command(SCD40_CMD_STOP_PERIODIC_MEASUREMENT, NULL, 0, SCD40_STOP_PERIODIC_MS);
+    if (ret != ESP_OK) {
+        ESP_LOGE(TAG, "SCD40 stop periodic measurement failed: %s", esp_err_to_name(ret));
+        return ret;
+    }
+    
+    // Read serial number to verify communication (9 bytes: 3 words of 2 bytes + CRC)
+    uint8_t serial_data[9];
+    ret = scd40_send_command(SCD40_CMD_GET_SERIAL_NUMBER, serial_data, 9, 1);
+    if (ret != ESP_OK) {
+        ESP_LOGE(TAG, "SCD40 read serial number failed: %s", esp_err_to_name(ret));
+        return ret;
+    }
+    
+    // Extract serial number (48 bits from 3 words)
+    scd40_serial_number = ((uint64_t)serial_data[0] << 40) | 
+                          ((uint64_t)serial_data[1] << 32) |
+                          ((uint64_t)serial_data[3] << 24) | 
+                          ((uint64_t)serial_data[4] << 16) |
+                          ((uint64_t)serial_data[6] << 8) | 
+                          serial_data[7];
+    
+    ESP_LOGI(TAG, "SCD40 serial number: 0x%012llX", scd40_serial_number);
+    
+    // Start periodic measurement
+    ret = scd40_send_command(SCD40_CMD_START_PERIODIC_MEASUREMENT, NULL, 0, 0);
+    if (ret != ESP_OK) {
+        ESP_LOGE(TAG, "SCD40 start periodic measurement failed: %s", esp_err_to_name(ret));
+        return ret;
+    }
+    
+    ESP_LOGI(TAG, "SCD40 initialized successfully. Measurements will be available in ~5 seconds.");
+    scd40_initialized = true;
+    
+    return ESP_OK;
+}
+
+/**
+ * @brief Read CO2, temperature, and humidity from SCD40
+ */
+static esp_err_t scd40_read_measurement(uint16_t *co2_ppm, float *temp_c, float *humidity_percent)
+{
+    if (!scd40_initialized) {
+        ESP_LOGE(TAG, "SCD40 not initialized");
+        return ESP_ERR_INVALID_STATE;
+    }
+    
+    // Check if data is ready (3 bytes: 1 word + CRC)
+    uint8_t status_data[3];
+    esp_err_t ret = scd40_send_command(SCD40_CMD_GET_DATA_READY_STATUS, status_data, 3, SCD40_READ_MEASUREMENT_MS);
+    if (ret != ESP_OK) {
+        ESP_LOGE(TAG, "SCD40 data ready check failed: %s", esp_err_to_name(ret));
+        return ret;
+    }
+    
+    uint16_t data_ready = (status_data[0] << 8) | status_data[1];
+    if ((data_ready & 0x07FF) == 0) {
+        // Data not ready yet
+        return ESP_ERR_NOT_FOUND;
+    }
+    
+    // Read measurement (9 bytes: CO2, temp, RH - each 2 bytes + CRC)
+    uint8_t meas_data[9];
+    ret = scd40_send_command(SCD40_CMD_READ_MEASUREMENT, meas_data, 9, SCD40_READ_MEASUREMENT_MS);
+    if (ret != ESP_OK) {
+        ESP_LOGE(TAG, "SCD40 read measurement failed: %s", esp_err_to_name(ret));
+        return ret;
+    }
+    
+    // Extract CO2 (ppm)
+    *co2_ppm = (meas_data[0] << 8) | meas_data[1];
+    
+    // Extract temperature (°C) = -45 + 175 * (value / 65536)
+    uint16_t temp_raw = (meas_data[3] << 8) | meas_data[4];
+    *temp_c = -45.0f + 175.0f * ((float)temp_raw / 65536.0f);
+    
+    // Extract humidity (%) = 100 * (value / 65536)
+    uint16_t rh_raw = (meas_data[6] << 8) | meas_data[7];
+    *humidity_percent = 100.0f * ((float)rh_raw / 65536.0f);
+    
+    return ESP_OK;
+}
+
+/**
+ * @brief Set ambient pressure compensation for SCD40
+ * @param pressure_hpa Ambient pressure in hPa (700-1200 hPa range)
+ */
+static esp_err_t scd40_set_ambient_pressure(uint16_t pressure_hpa)
+{
+    if (!scd40_initialized) {
+        ESP_LOGE(TAG, "SCD40 not initialized");
+        return ESP_ERR_INVALID_STATE;
+    }
+    
+    // Pressure must be in range 700-1200 hPa and in units of hPa
+    if (pressure_hpa < 700 || pressure_hpa > 1200) {
+        ESP_LOGW(TAG, "SCD40 pressure %d hPa out of range (700-1200), clamping", pressure_hpa);
+        if (pressure_hpa < 700) pressure_hpa = 700;
+        if (pressure_hpa > 1200) pressure_hpa = 1200;
+    }
+    
+    // Prepare command with pressure parameter
+    uint8_t cmd_buf[5];
+    cmd_buf[0] = SCD40_CMD_SET_AMBIENT_PRESSURE >> 8;
+    cmd_buf[1] = SCD40_CMD_SET_AMBIENT_PRESSURE & 0xFF;
+    cmd_buf[2] = pressure_hpa >> 8;
+    cmd_buf[3] = pressure_hpa & 0xFF;
+    cmd_buf[4] = sensirion_crc8(&cmd_buf[2], 2);
+    
+    esp_err_t ret = i2c_master_write_to_device(AERIS_I2C_NUM, SCD40_I2C_ADDR,
+                                                cmd_buf, 5, pdMS_TO_TICKS(1000));
+    if (ret != ESP_OK) {
+        ESP_LOGE(TAG, "SCD40 set ambient pressure failed: %s", esp_err_to_name(ret));
+        return ret;
+    }
+    
+    ESP_LOGD(TAG, "SCD40 ambient pressure set to %d hPa", pressure_hpa);
     return ESP_OK;
 }
 
@@ -729,6 +935,13 @@ esp_err_t aeris_driver_init(void)
             ESP_LOGW(TAG, "Failed to initialize SGP41: %s", esp_err_to_name(ret));
             ESP_LOGW(TAG, "Continuing without VOC/NOx sensor");
         }
+        
+        // Initialize SCD40 CO2 sensor
+        ret = scd40_init();
+        if (ret != ESP_OK) {
+            ESP_LOGW(TAG, "Failed to initialize SCD40: %s", esp_err_to_name(ret));
+            ESP_LOGW(TAG, "Continuing without CO2 sensor");
+        }
     }
     
     // Initialize PMSA003A UART
@@ -744,9 +957,6 @@ esp_err_t aeris_driver_init(void)
         ESP_LOGE(TAG, "Failed to create PMSA003A task");
         return ESP_FAIL;
     }
-    
-    // TODO: Initialize other sensors here
-    // - CO2 sensor (e.g., SCD40, SCD41)
     
     ESP_LOGI(TAG, "Aeris driver initialized successfully");
     
@@ -954,11 +1164,38 @@ esp_err_t aeris_read_co2(uint16_t *co2_ppm)
         return ESP_ERR_INVALID_ARG;
     }
     
-    // TODO: Implement actual sensor reading
-    // Example for SCD40 or SCD41
+    // Read from SCD40 sensor
+    if (!scd40_initialized) {
+        ESP_LOGW(TAG, "SCD40 not initialized, returning cached value");
+        *co2_ppm = current_state.co2_ppm;
+        return ESP_ERR_INVALID_STATE;
+    }
     
-    *co2_ppm = current_state.co2_ppm;
+    // Update pressure compensation if LPS22HB is available
+    if (lps22hb_initialized && current_state.pressure_hpa > 0) {
+        // Convert pressure to hPa (it's already in hPa from our state)
+        uint16_t pressure_hpa = (uint16_t)(current_state.pressure_hpa + 0.5f);
+        scd40_set_ambient_pressure(pressure_hpa);
+    }
     
-    ESP_LOGD(TAG, "CO2: %d ppm", *co2_ppm);
+    float temp_c, humidity_percent;
+    esp_err_t ret = scd40_read_measurement(co2_ppm, &temp_c, &humidity_percent);
+    if (ret == ESP_ERR_NOT_FOUND) {
+        // Data not ready yet, return cached value
+        *co2_ppm = current_state.co2_ppm;
+        return ESP_ERR_NOT_FOUND;
+    } else if (ret != ESP_OK) {
+        ESP_LOGE(TAG, "Failed to read SCD40: %s", esp_err_to_name(ret));
+        *co2_ppm = current_state.co2_ppm;
+        return ret;
+    }
+    
+    // Update current state
+    current_state.co2_ppm = *co2_ppm;
+    
+    // Note: SCD40 also provides temp/humidity but we use SHT45 as primary
+    ESP_LOGD(TAG, "CO2: %d ppm (SCD40 temp: %.2f°C, RH: %.2f%%)", 
+             *co2_ppm, temp_c, humidity_percent);
+    
     return ESP_OK;
 }

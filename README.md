@@ -18,7 +18,7 @@ This project implements a Zigbee End Device that reads air quality sensors and e
   - **LPS22HB Pressure sensor** via I2C
   - **PMSA003A Particulate Matter sensor** via UART
   - **SGP41 VOC and NOx sensor** via I2C
-  - CO2 sensor (e.g., SCD40, SCD41) via I2C
+  - **SCD40 CO2 sensor** via I2C
 - I2C connection (SDA/SCL pins configurable)
 - UART connection for PMSA003A (RX pin configurable)
 
@@ -60,6 +60,12 @@ The Zigbee air quality sensor exposes the following sensor endpoints:
 
 ### Endpoint 5: CO2 Sensor
 - **CO2 Concentration Cluster (0x040D)**: Carbon dioxide in ppm
+- **Sensor**: Sensirion SCD40 (I2C)
+- **Range**: 400-2000 ppm (optimized for indoor air quality)
+- **Accuracy**: ±(40 ppm + 5% of reading)
+- **Update Rate**: 5 seconds (automatic periodic measurement)
+- **Pressure Compensation**: Automatic compensation using LPS22HB pressure data
+- **Additional**: Built-in temperature and humidity sensor (bonus)
 
 ## I2C and UART Configuration
 
@@ -76,6 +82,7 @@ The device communicates with most sensors via I2C:
 - SHT45 (Temp/Humidity): 0x44 (fixed address)
 - LPS22HB (Pressure): 0x5C (default, SA0=0) or 0x5D (SA0=1)
 - SGP41 (VOC/NOx): 0x59 (fixed address)
+- SCD40 (CO2): 0x62 (fixed address)
 
 ### UART for PMSA003A (Particulate Matter Sensor)
 
@@ -220,8 +227,18 @@ This project provides a framework for air quality sensors. You'll need to implem
 - **Alternative**: SGP40 (VOC only), BME680 (combo sensor)
 
 ### CO2
-- **SCD40**: NDIR CO2 sensor (400-2000 ppm)
-- **SCD41**: Extended range (400-5000 ppm)
+- **SCD40** (implemented): Sensirion NDIR CO2 sensor
+  - I2C interface (address 0x62)
+  - Range: 400-2000 ppm (indoor air quality)
+  - Accuracy: ±(40 ppm + 5%)
+  - Automatic periodic measurement every 5 seconds
+  - **Ambient pressure compensation** from LPS22HB sensor
+  - Built-in temperature and humidity sensor
+  - Automatic self-calibration (ASC)
+  - CRC-8 data validation
+  - Serial number readout
+  - Low power: 15 mA average @ 1 measurement/5s
+- **Alternative**: SCD41 (extended range 400-5000 ppm)
 
 ## Implementation Notes
 
@@ -260,8 +277,15 @@ The `aeris_driver.c` file contains:
    - CRC8 validation on all data
    - Placeholder index calculation (needs Gas Index Algorithm)
 
-5. **I2C sensor stubs** (need implementation):
-   - CO2 sensor
+5. **SCD40 implementation** (complete):
+   - I2C initialization and device detection
+   - Serial number readout and verification
+   - Automatic periodic measurement mode
+   - CO2, temperature, and humidity reading
+   - Ambient pressure compensation using LPS22HB data
+   - CRC-8 validation on all data
+   - Data ready status checking
+   - 5-second measurement interval
 
 ## Sensor Wiring Diagrams
 
@@ -318,6 +342,18 @@ SDA       → GPIO 6 (I2C SDA)
 
 **Note**: SGP41 operates at 1.7-3.6V. Use 3.3V supply. No external pull-ups needed on most breakout boards.
 
+### SCD40 Wiring
+
+```
+SCD40 Pin → ESP32-C6
+VDD       → 3.3V
+GND       → GND
+SCL       → GPIO 7 (I2C SCL)
+SDA       → GPIO 6 (I2C SDA)
+```
+
+**Note**: SCD40 operates at 2.4-5.5V. Use 3.3V supply. Automatic periodic measurement every 5 seconds. Benefits from ambient pressure compensation provided by LPS22HB sensor.
+
 ### Important: Gas Index Algorithm
 
 The SGP41 currently uses a **simplified placeholder** for VOC/NOx index calculation. For production use, integrate Sensirion's **Gas Index Algorithm**:
@@ -350,7 +386,7 @@ All HVAC control logic has been replaced with air quality sensor reading functio
 - **I2C sensors**:
   - Verify I2C wiring (SDA/SCL connections)
   - Check I2C pull-up resistors (usually 4.7kΩ)
-  - Verify sensor power supply (3.3V for SHT45, LPS22HB, SGP41)
+  - Verify sensor power supply (3.3V for SHT45, LPS22HB, SGP41, SCD40)
   - Use `i2cdetect` to scan for sensor addresses
   - Monitor I2C traffic in logs
   - **SHT45**: Read serial number to verify communication
@@ -360,6 +396,9 @@ All HVAC control logic has been replaced with air quality sensor reading functio
   - **SGP41**: Check serial number readout
   - **SGP41**: Verify self-test passes (result 0xD400)
   - **SGP41**: Ensure temperature/humidity data is available for compensation
+  - **SCD40**: Check serial number readout
+  - **SCD40**: Verify data ready status (measurements every 5 seconds)
+  - **SCD40**: Check CRC errors in logs
 - **PMSA003A (PM sensor)**:
   - Verify UART RX connection (PMSA003A TX → GPIO20)
   - Check 5V power supply to sensor
@@ -372,6 +411,7 @@ All HVAC control logic has been replaced with air quality sensor reading functio
 - Verify periodic read task is running
 - Check log output for sensor read errors
 - Ensure reporting is configured on Zigbee coordinator
+- **SCD40**: Wait at least 5 seconds for first measurement after initialization
 
 ### Build errors
 - Make sure ESP-IDF v5.5.1+ is installed

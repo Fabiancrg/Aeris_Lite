@@ -48,6 +48,9 @@ typedef struct {
 /* SGP41 VOC/NOx Sensor I2C Address */
 #define SGP41_I2C_ADDR          0x59  // Fixed I2C address
 
+/* SCD40 CO2 Sensor I2C Address */
+#define SCD40_I2C_ADDR          0x62  // Fixed I2C address
+
 /* UART Configuration for PMSA003A */
 #define PMSA003A_UART_NUM       UART_NUM_1
 #define PMSA003A_UART_TX_PIN    18   // GPIO18 (TX - not used for PMSA003A)

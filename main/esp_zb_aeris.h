@@ -30,6 +30,19 @@
 #define ESP_MANUFACTURER_NAME "\x09""ESPRESSIF"      /* Customized manufacturer name */
 #define ESP_MODEL_IDENTIFIER "\x07""aeris-z"         /* Air quality sensor model */
 
+/* Router configuration (was ZED_CONFIG - changed to match working example) */
+#define ESP_ZB_ROUTER_CONFIG()                                      \
+    {                                                               \
+        .esp_zb_role = ESP_ZB_DEVICE_TYPE_ROUTER,                   \
+        .install_code_policy = INSTALLCODE_POLICY_ENABLE,           \
+        .nwk_cfg = {                                                \
+            .zczr_cfg = {                                           \
+                .max_children = 10,                                 \
+            },                                                      \
+        },                                                          \
+    }
+
+/* Legacy ZED config kept for reference (not used) */
 #define ESP_ZB_ZED_CONFIG()                                         \
     {                                                               \
         .esp_zb_role = ESP_ZB_DEVICE_TYPE_ED,                       \

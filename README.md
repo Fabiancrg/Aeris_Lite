@@ -8,7 +8,7 @@
 [![License: GPL v3](https://img.shields.io/badge/Software-GPLv3-blue.svg)](./LICENSE)
 [![License: CC BY-NC-SA 4.0](https://img.shields.io/badge/Hardware-CC%20BY--NC--SA%204.0-green.svg)](./LICENSE-hardware)
 
-This project implements a Zigbee End Device that reads air quality sensors and exposes them as standard Zigbee sensor endpoints.
+This project implements a Zigbee Device (Router) that reads air quality sensors and exposes them as standard Zigbee sensor endpoints.
 
 ## Hardware Requirements
 

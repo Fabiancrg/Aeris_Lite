@@ -345,8 +345,8 @@ static void sensor_periodic_update(uint8_t param)
 
 static void esp_zb_task(void *pvParameters)
 {
-    /* Initialize Zigbee stack */
-    esp_zb_cfg_t zb_nwk_cfg = ESP_ZB_ZED_CONFIG();
+    /* Initialize Zigbee stack as Router (matching working example) */
+    esp_zb_cfg_t zb_nwk_cfg = ESP_ZB_ROUTER_CONFIG();
     esp_zb_init(&zb_nwk_cfg);
     
     /* Create endpoint list */

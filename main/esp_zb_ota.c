@@ -274,3 +274,60 @@ uint32_t esp_zb_ota_get_fw_version(void)
     }
     return version;
 }
+
+/**
+ * @brief OTA validation functions for new firmware
+ * These functions validate that the new firmware is working correctly
+ */
+
+void ota_validation_start(void)
+{
+    const esp_partition_t *running = esp_ota_get_running_partition();
+    esp_ota_img_states_t ota_state;
+    
+    if (esp_ota_get_state_partition(running, &ota_state) == ESP_OK) {
+        if (ota_state == ESP_OTA_IMG_PENDING_VERIFY) {
+            ESP_LOGW(TAG, "OTA validation pending - new firmware needs validation");
+            // Firmware will be validated through the validation steps below
+        }
+    }
+}
+
+void ota_validation_hw_init_ok(void)
+{
+    ESP_LOGI(TAG, "OTA validation: Hardware initialization OK");
+    // Hardware initialized successfully
+}
+
+void ota_validation_zigbee_init_ok(void)
+{
+    ESP_LOGI(TAG, "OTA validation: Zigbee stack initialization OK");
+    // Zigbee initialized successfully
+}
+
+void ota_validation_zigbee_connected(void)
+{
+    ESP_LOGI(TAG, "OTA validation: Zigbee connected to network OK");
+    
+    // If we reached here, the new firmware is working
+    const esp_partition_t *running = esp_ota_get_running_partition();
+    esp_ota_img_states_t ota_state;
+    
+    if (esp_ota_get_state_partition(running, &ota_state) == ESP_OK) {
+        if (ota_state == ESP_OTA_IMG_PENDING_VERIFY) {
+            ESP_LOGI(TAG, "Validating new firmware - all checks passed");
+            esp_err_t err = esp_ota_mark_app_valid_cancel_rollback();
+            if (err == ESP_OK) {
+                ESP_LOGI(TAG, "New firmware validated successfully!");
+            } else {
+                ESP_LOGE(TAG, "Failed to validate firmware: %s", esp_err_to_name(err));
+            }
+        }
+    }
+}
+
+void ota_validation_mark_invalid(void)
+{
+    ESP_LOGW(TAG, "OTA validation failed - marking firmware as invalid");
+    esp_ota_mark_app_invalid_rollback_and_reboot();
+}

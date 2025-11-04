@@ -7,10 +7,10 @@ include($ENV{IDF_PATH}/tools/cmake/project.cmake)
 idf_build_set_property(MINIMAL_BUILD ON)
 
 # Version configuration
-set(PROJECT_VER "1.3")
+set(PROJECT_VER "0.1")
 set(BUILD_NUMBER 0)
 set(MANUFACTURER_CODE "0xFABC")
-set(IMAGE_TYPE "0x1000")
+set(IMAGE_TYPE "0x1100")
 set(ZIGBEE_STACK_VERSION "0x0003")  # Zigbee 3.0
 
 # Convert PROJECT_VER (e.g. 1.1.0) to 0xMMmmpppp format for OTA
@@ -47,7 +47,7 @@ add_compile_definitions(
     ZB_STACK_VERSION=${ZIGBEE_STACK_VERSION}
 )
 
-project(acw02_zb)
+project(aeris_zb)
 
 # Find Python
 find_package(Python3 REQUIRED)

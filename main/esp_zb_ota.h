@@ -11,7 +11,7 @@
 
 // OTA manufacturer and image type definitions
 #define OTA_UPGRADE_MANUFACTURER  0xFABC    // DIY manufacturer code
-#define OTA_UPGRADE_IMAGE_TYPE    0x1000
+#define OTA_UPGRADE_IMAGE_TYPE    0x1100
 
 #ifdef __cplusplus
 extern "C" {
@@ -60,6 +60,15 @@ esp_err_t zb_ota_upgrade_value_handler(esp_zb_zcl_ota_upgrade_value_message_t me
  * @return ESP_OK on success
  */
 esp_err_t zb_ota_query_image_resp_handler(esp_zb_zcl_ota_upgrade_query_image_resp_message_t message);
+
+/**
+ * @brief OTA validation functions - called during boot to validate new firmware
+ */
+void ota_validation_start(void);
+void ota_validation_hw_init_ok(void);
+void ota_validation_zigbee_init_ok(void);
+void ota_validation_zigbee_connected(void);
+void ota_validation_mark_invalid(void);
 
 #ifdef __cplusplus
 }

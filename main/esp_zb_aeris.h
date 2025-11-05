@@ -38,6 +38,7 @@
 #define ZCL_LED_ATTR_HUM_RED_HIGH       0xF009
 #define ZCL_LED_ATTR_PM25_ORANGE        0xF00A
 #define ZCL_LED_ATTR_PM25_RED           0xF00B
+#define ZCL_LED_ATTR_ENABLE_MASK        0xF00C  // Bitmask for individual LED control
 
 #define ESP_ZB_PRIMARY_CHANNEL_MASK     ESP_ZB_TRANSCEIVER_ALL_CHANNELS_MASK /* Zigbee primary channel mask use in the example */
 

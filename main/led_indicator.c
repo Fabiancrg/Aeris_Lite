@@ -44,6 +44,7 @@ static const char* LED_NAMES[LED_ID_MAX] = {
 /* Default thresholds */
 static led_thresholds_t s_thresholds = {
     .enabled = true,
+    .led_mask = LED_ENABLE_ALL,  // All 5 LEDs enabled by default (0x1F)
     .voc_orange = 150,
     .voc_red = 250,
     .nox_orange = 150,
@@ -387,7 +388,7 @@ esp_err_t led_update_from_sensors(const led_sensor_data_t *sensor_data)
     }
     
     if (!s_thresholds.enabled) {
-        // Turn off all LEDs if disabled
+        // Master switch OFF - turn off all LEDs
         for (int i = 0; i < LED_ID_MAX; i++) {
             if (s_current_colors[i] != LED_COLOR_OFF) {
                 led_set_color(i, LED_COLOR_OFF);
@@ -396,56 +397,77 @@ esp_err_t led_update_from_sensors(const led_sensor_data_t *sensor_data)
         return ESP_OK;
     }
     
-    // Evaluate each sensor independently and update its LED
-    led_color_t voc_color = evaluate_voc(sensor_data->voc_index);
-    led_color_t nox_color = evaluate_nox(sensor_data->nox_index);
-    led_color_t co2_color = evaluate_co2(sensor_data->co2_ppm);
-    led_color_t humidity_color = evaluate_humidity(sensor_data->humidity_percent);
-    led_color_t pm25_color = evaluate_pm25(sensor_data->pm25_ug_m3);
+    // Evaluate each sensor independently and update its LED (if enabled in bitmask)
     
-    // Update VOC LED
-    if (voc_color != s_current_colors[LED_ID_VOC]) {
-        ESP_LOGI(TAG, "VOC LED: %s (index: %d)", 
-                 voc_color == LED_COLOR_GREEN ? "GREEN" : 
-                 voc_color == LED_COLOR_ORANGE ? "ORANGE" : "RED",
-                 sensor_data->voc_index);
-        led_set_color(LED_ID_VOC, voc_color);
+    // Update CO2 LED (bit 0)
+    if (s_thresholds.led_mask & LED_ENABLE_CO2_BIT) {
+        led_color_t co2_color = evaluate_co2(sensor_data->co2_ppm);
+        if (co2_color != s_current_colors[LED_ID_CO2]) {
+            ESP_LOGI(TAG, "CO2 LED: %s (CO2: %d ppm)", 
+                     co2_color == LED_COLOR_GREEN ? "GREEN" : 
+                     co2_color == LED_COLOR_ORANGE ? "ORANGE" : "RED",
+                     sensor_data->co2_ppm);
+            led_set_color(LED_ID_CO2, co2_color);
+        }
+    } else if (s_current_colors[LED_ID_CO2] != LED_COLOR_OFF) {
+        // LED disabled in mask - turn it off
+        led_set_color(LED_ID_CO2, LED_COLOR_OFF);
     }
     
-    // Update NOx LED
-    if (nox_color != s_current_colors[LED_ID_NOX]) {
-        ESP_LOGI(TAG, "NOx LED: %s (index: %d)", 
-                 nox_color == LED_COLOR_GREEN ? "GREEN" : 
-                 nox_color == LED_COLOR_ORANGE ? "ORANGE" : "RED",
-                 sensor_data->nox_index);
-        led_set_color(LED_ID_NOX, nox_color);
+    // Update VOC LED (bit 1)
+    if (s_thresholds.led_mask & LED_ENABLE_VOC_BIT) {
+        led_color_t voc_color = evaluate_voc(sensor_data->voc_index);
+        if (voc_color != s_current_colors[LED_ID_VOC]) {
+            ESP_LOGI(TAG, "VOC LED: %s (index: %d)", 
+                     voc_color == LED_COLOR_GREEN ? "GREEN" : 
+                     voc_color == LED_COLOR_ORANGE ? "ORANGE" : "RED",
+                     sensor_data->voc_index);
+            led_set_color(LED_ID_VOC, voc_color);
+        }
+    } else if (s_current_colors[LED_ID_VOC] != LED_COLOR_OFF) {
+        led_set_color(LED_ID_VOC, LED_COLOR_OFF);
     }
     
-    // Update CO2 LED
-    if (co2_color != s_current_colors[LED_ID_CO2]) {
-        ESP_LOGI(TAG, "CO2 LED: %s (CO2: %d ppm)", 
-                 co2_color == LED_COLOR_GREEN ? "GREEN" : 
-                 co2_color == LED_COLOR_ORANGE ? "ORANGE" : "RED",
-                 sensor_data->co2_ppm);
-        led_set_color(LED_ID_CO2, co2_color);
+    // Update NOx LED (bit 2)
+    if (s_thresholds.led_mask & LED_ENABLE_NOX_BIT) {
+        led_color_t nox_color = evaluate_nox(sensor_data->nox_index);
+        if (nox_color != s_current_colors[LED_ID_NOX]) {
+            ESP_LOGI(TAG, "NOx LED: %s (index: %d)", 
+                     nox_color == LED_COLOR_GREEN ? "GREEN" : 
+                     nox_color == LED_COLOR_ORANGE ? "ORANGE" : "RED",
+                     sensor_data->nox_index);
+            led_set_color(LED_ID_NOX, nox_color);
+        }
+    } else if (s_current_colors[LED_ID_NOX] != LED_COLOR_OFF) {
+        led_set_color(LED_ID_NOX, LED_COLOR_OFF);
     }
     
-    // Update Humidity LED
-    if (humidity_color != s_current_colors[LED_ID_HUMIDITY]) {
-        ESP_LOGI(TAG, "Humidity LED: %s (%.1f%%)", 
-                 humidity_color == LED_COLOR_GREEN ? "GREEN" : 
-                 humidity_color == LED_COLOR_ORANGE ? "ORANGE" : "RED",
-                 sensor_data->humidity_percent);
-        led_set_color(LED_ID_HUMIDITY, humidity_color);
+    // Update PM2.5 LED (bit 3)
+    if (s_thresholds.led_mask & LED_ENABLE_PM25_BIT) {
+        led_color_t pm25_color = evaluate_pm25(sensor_data->pm25_ug_m3);
+        if (pm25_color != s_current_colors[LED_ID_PM25]) {
+            ESP_LOGI(TAG, "PM2.5 LED: %s (%.1f µg/m³)", 
+                     pm25_color == LED_COLOR_GREEN ? "GREEN" : 
+                     pm25_color == LED_COLOR_ORANGE ? "ORANGE" : "RED",
+                     sensor_data->pm25_ug_m3);
+            led_set_color(LED_ID_PM25, pm25_color);
+        }
+    } else if (s_current_colors[LED_ID_PM25] != LED_COLOR_OFF) {
+        led_set_color(LED_ID_PM25, LED_COLOR_OFF);
     }
     
-    // Update PM2.5 LED
-    if (pm25_color != s_current_colors[LED_ID_PM25]) {
-        ESP_LOGI(TAG, "PM2.5 LED: %s (%.1f µg/m³)", 
-                 pm25_color == LED_COLOR_GREEN ? "GREEN" : 
-                 pm25_color == LED_COLOR_ORANGE ? "ORANGE" : "RED",
-                 sensor_data->pm25_ug_m3);
-        led_set_color(LED_ID_PM25, pm25_color);
+    // Update Humidity LED (bit 4)
+    if (s_thresholds.led_mask & LED_ENABLE_HUM_BIT) {
+        led_color_t humidity_color = evaluate_humidity(sensor_data->humidity_percent);
+        if (humidity_color != s_current_colors[LED_ID_HUMIDITY]) {
+            ESP_LOGI(TAG, "Humidity LED: %s (%.1f%%)", 
+                     humidity_color == LED_COLOR_GREEN ? "GREEN" : 
+                     humidity_color == LED_COLOR_ORANGE ? "ORANGE" : "RED",
+                     sensor_data->humidity_percent);
+            led_set_color(LED_ID_HUMIDITY, humidity_color);
+        }
+    } else if (s_current_colors[LED_ID_HUMIDITY] != LED_COLOR_OFF) {
+        led_set_color(LED_ID_HUMIDITY, LED_COLOR_OFF);
     }
     
     return ESP_OK;

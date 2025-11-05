@@ -97,9 +97,9 @@ The Zigbee air quality sensor exposes the following sensor endpoints:
 - **Additional**: Built-in temperature and humidity sensor (bonus)
 
 ### Endpoint 9: LED Configuration
-- **On/Off Cluster (0x0006)**: Enable/disable all 5 RGB status LEDs
-- **Custom Attributes (0xF000-0xF00B)**: Configurable air quality thresholds
-- **Control**: Single switch controls all 5 LEDs simultaneously
+- **On/Off Cluster (0x0006)**: Master switch to enable/disable all RGB status LEDs
+- **Custom Attributes (0xF000-0xF00C)**: Configurable air quality thresholds and individual LED control
+- **Bitmask Control (0xF00C)**: Individual enable/disable for each of the 5 LEDs
 - **Thresholds**: Adjustable orange/red warning levels for VOC, NOx, CO2, Humidity, PM2.5
 
 ## RGB LED Air Quality Indicators
@@ -123,8 +123,36 @@ Each LED independently displays:
 - **Independent operation**: Each LED shows only its corresponding sensor
 - **At-a-glance status**: Quickly identify which parameter needs attention
 - **Configurable thresholds**: Adjust warning/danger levels via Zigbee2MQTT
-- **Single control**: Enable/disable all 5 LEDs with one command
+- **Dual control**:
+  - **Master switch**: Enable/disable all LEDs at once (On/Off cluster)
+  - **Individual control**: Enable/disable each LED separately via bitmask (0xF00C)
 - **Low power**: LEDs only update when color changes
+
+### LED Control
+
+**Master On/Off Switch:**
+- Turn all LEDs on/off regardless of individual settings
+- Located in On/Off cluster (standard Zigbee)
+
+**Individual LED Bitmask (0xF00C):**
+- Control each LED independently using a single 8-bit value
+- Each bit represents one LED (1=enabled, 0=disabled)
+- Bit assignments:
+  - Bit 0 (0x01): CO2 LED
+  - Bit 1 (0x02): VOC LED
+  - Bit 2 (0x04): NOx LED
+  - Bit 3 (0x08): PM2.5 LED
+  - Bit 4 (0x10): Humidity LED
+- Default: `0x1F` (all LEDs enabled)
+
+**Examples:**
+```
+0x1F (31)  - All LEDs enabled
+0x03 (3)   - Only CO2 and VOC enabled
+0x08 (8)   - Only PM2.5 enabled
+0x0D (13)  - CO2, NOx, and PM2.5 enabled
+0x00 (0)   - All LEDs disabled (individual level)
+```
 
 ### Default Thresholds (all configurable)
 - **VOC Index**: Orange ≥150, Red ≥250
@@ -226,10 +254,19 @@ The device is configured as a Zigbee Router:
 
 ### LED Configuration
 
-Configure LED thresholds via Zigbee2MQTT endpoint 9:
-- **Enable/Disable**: Single On/Off switch controls all 5 LEDs
+Configure LED behavior via Zigbee2MQTT endpoint 9:
+- **Master On/Off**: Single switch to enable/disable all LEDs (On/Off cluster)
+- **Individual Control**: Bitmask attribute (0xF00C) for per-LED enable/disable
+  - Set to `0x1F` (31) for all LEDs
+  - Set to `0x03` (3) for CO2 + VOC only
+  - Set to `0x00` (0) to disable all (at individual level)
 - **Thresholds**: 12 configurable attributes (VOC, NOx, CO2, Humidity, PM2.5 orange/red levels)
 - **GPIO Pins**: Configurable in `main/board.h` (defaults: GPIO21, 4, 8, 5, 10)
+
+**Control Logic:**
+- Master OFF → All LEDs off (ignores bitmask)
+- Master ON + bit set → LED shows sensor status color
+- Master ON + bit clear → LED off
 
 See [LED Configuration Guide](doc/LED_CONFIGURATION.md) for detailed threshold settings.
 
@@ -258,8 +295,36 @@ On first boot, the device will automatically enter network steering mode. Once j
    - VOC Index (1-500)
    - NOx Index (1-500)
    - CO2 (ppm)
-   - **LED Enable** (switch to control all 5 status LEDs)
+   - **LED Master Switch** (On/Off - controls all LEDs)
+   - **LED Enable Mask** (0-31 - individual LED control)
    - **LED Thresholds** (configurable warning/danger levels)
+
+### LED Control Examples
+
+**Via Zigbee2MQTT:**
+
+```javascript
+// Turn all LEDs on (master switch)
+await publish('zigbee2mqtt/aeris/set', {state: 'ON'});
+
+// Turn all LEDs off (master switch)
+await publish('zigbee2mqtt/aeris/set', {state: 'OFF'});
+
+// Enable all 5 LEDs individually (bitmask)
+await publish('zigbee2mqtt/aeris/set', {led_enable_mask: 31});  // 0x1F
+
+// Enable only CO2 and VOC LEDs
+await publish('zigbee2mqtt/aeris/set', {led_enable_mask: 3});   // 0x03
+
+// Enable only PM2.5 LED
+await publish('zigbee2mqtt/aeris/set', {led_enable_mask: 8});   // 0x08
+
+// Enable CO2, NOx, and PM2.5 LEDs
+await publish('zigbee2mqtt/aeris/set', {led_enable_mask: 13});  // 0x0D
+
+// Disable all LEDs via bitmask (master can still be ON)
+await publish('zigbee2mqtt/aeris/set', {led_enable_mask: 0});
+```
 
 ### Visual LED Status
 
@@ -558,13 +623,17 @@ All HVAC control logic has been replaced with air quality sensor reading functio
   - Check GPIO wiring for all 5 LEDs (GPIO21, 4, 8, 5, 10)
   - Verify LED power supply (3.3V or 5V depending on SK6812 spec)
   - Check serial logs for RMT initialization errors
-  - Ensure LEDs are enabled via Zigbee On/Off attribute (endpoint 9)
+  - Ensure master switch is ON (endpoint 9, On/Off cluster)
+  - Verify LED enable mask is not 0x00 (check attribute 0xF00C)
   - Look for "LED initialized" messages in logs
 - **Some LEDs work, others don't**:
   - Check individual GPIO connections
   - Verify all 5 RMT channels initialized (check logs)
   - Test each LED's GPIO pin continuity
   - Check for damaged LEDs
+  - **Check LED enable mask** - specific LEDs may be disabled via bitmask
+    - Read attribute 0xF00C to see which LEDs are enabled
+    - Set to 0x1F (31) to enable all LEDs
 - **LEDs show wrong colors**:
   - Verify sensor readings are accurate (check sensor endpoints)
   - Review threshold configuration in Zigbee2MQTT
@@ -572,9 +641,14 @@ All HVAC control logic has been replaced with air quality sensor reading functio
   - Default thresholds may not match your environment - adjust via endpoint 9
 - **Can't change LED thresholds**:
   - Verify endpoint 9 is exposed in Zigbee2MQTT
-  - Check custom attribute IDs (0xF000-0xF00B) are mapped
+  - Check custom attribute IDs (0xF000-0xF00C) are mapped
   - Try re-pairing device if attributes missing
   - See [LED Configuration Guide](doc/LED_CONFIGURATION.md) for Z2M converter
+- **Individual LED control not working**:
+  - Ensure master switch (On/Off) is ON first
+  - Verify LED enable mask attribute (0xF00C) is being written correctly
+  - Check logs for "LED enable mask: 0x..." messages
+  - Remember: Master OFF overrides all individual settings
 
 **Power Note**: 5 LEDs at full brightness can draw ~300mA. Ensure adequate power supply (1A recommended).
 

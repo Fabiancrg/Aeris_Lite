@@ -21,6 +21,14 @@ typedef enum {
     LED_ID_MAX
 } led_id_t;
 
+/* LED enable bitmask definitions */
+#define LED_ENABLE_CO2_BIT      (1 << 0)  // Bit 0: CO2 LED
+#define LED_ENABLE_VOC_BIT      (1 << 1)  // Bit 1: VOC LED
+#define LED_ENABLE_NOX_BIT      (1 << 2)  // Bit 2: NOx LED
+#define LED_ENABLE_PM25_BIT     (1 << 3)  // Bit 3: PM2.5 LED
+#define LED_ENABLE_HUM_BIT      (1 << 4)  // Bit 4: Humidity LED
+#define LED_ENABLE_ALL          0x1F      // All 5 LEDs enabled (bits 0-4)
+
 /* LED Color definitions */
 typedef enum {
     LED_COLOR_OFF = 0,
@@ -31,7 +39,8 @@ typedef enum {
 
 /* Air quality thresholds structure */
 typedef struct {
-    bool enabled;           // LED enable/disable
+    bool enabled;           // Master LED enable/disable (all LEDs)
+    uint8_t led_mask;       // Bitmask for individual LED control (bits 0-4)
     
     // VOC Index thresholds (1-500 scale)
     uint16_t voc_orange;    // Warning threshold (default: 150)

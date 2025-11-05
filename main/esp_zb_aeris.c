@@ -36,6 +36,10 @@ static const char *TAG = "AERIS_ZIGBEE";
 #define BOOT_BUTTON_GPIO            GPIO_NUM_9
 #define BUTTON_LONG_PRESS_TIME_MS   5000
 
+/* Status LED blink state */
+static TimerHandle_t status_led_blink_timer = NULL;
+static bool status_led_blink_state = false;
+
 /********************* Function Declarations **************************/
 static esp_err_t deferred_driver_init(void);
 static void sensor_update_zigbee_attributes(uint8_t param);
@@ -43,6 +47,7 @@ static void sensor_periodic_update(uint8_t param);
 static esp_err_t button_init(void);
 static void button_task(void *arg);
 static void factory_reset_device(uint8_t param);
+static void status_led_blink_callback(TimerHandle_t xTimer);
 
 /* OTA validation functions */
 void ota_validation_start(void);
@@ -59,6 +64,44 @@ static void factory_reset_device(uint8_t param)
     ESP_LOGI(TAG, "[RESET] Factory reset successful - device will restart");
     vTaskDelay(pdMS_TO_TICKS(1000));
     esp_restart();
+}
+
+/* Status LED blink timer callback for join animation */
+static void status_led_blink_callback(TimerHandle_t xTimer)
+{
+    // Toggle between green and orange during joining
+    status_led_blink_state = !status_led_blink_state;
+    led_set_status(status_led_blink_state ? LED_COLOR_GREEN : LED_COLOR_ORANGE);
+}
+
+/* Start status LED blinking (green/orange during join) */
+static void status_led_start_blink(void)
+{
+    if (status_led_blink_timer == NULL) {
+        status_led_blink_timer = xTimerCreate(
+            "status_blink",
+            pdMS_TO_TICKS(500),  // 500ms interval
+            pdTRUE,              // Auto-reload
+            NULL,
+            status_led_blink_callback
+        );
+    }
+    
+    if (status_led_blink_timer != NULL) {
+        status_led_blink_state = false;
+        led_set_status(LED_COLOR_ORANGE);
+        xTimerStart(status_led_blink_timer, 0);
+        ESP_LOGI(TAG, "[STATUS_LED] Started join blink animation");
+    }
+}
+
+/* Stop status LED blinking */
+static void status_led_stop_blink(void)
+{
+    if (status_led_blink_timer != NULL) {
+        xTimerStop(status_led_blink_timer, 0);
+        ESP_LOGI(TAG, "[STATUS_LED] Stopped blink animation");
+    }
 }
 
 /* Boot button queue and ISR handler */
@@ -211,6 +254,7 @@ void esp_zb_app_signal_handler(esp_zb_app_signal_t *signal_struct)
     switch (sig_type) {
     case ESP_ZB_ZDO_SIGNAL_SKIP_STARTUP:
         ESP_LOGI(TAG, "[JOIN] Initialize Zigbee stack");
+        led_set_status(LED_COLOR_ORANGE);  // Not joined yet
         esp_zb_bdb_start_top_level_commissioning(ESP_ZB_BDB_MODE_INITIALIZATION);
         break;
         
@@ -218,7 +262,10 @@ void esp_zb_app_signal_handler(esp_zb_app_signal_t *signal_struct)
         ESP_LOGI(TAG, "[JOIN] Device first start - factory new device");
         if (err_status == ESP_OK) {
             deferred_driver_init();
+            status_led_start_blink();  // Start blinking during join
             esp_zb_bdb_start_top_level_commissioning(ESP_ZB_BDB_MODE_NETWORK_STEERING);
+        } else {
+            led_set_status(LED_COLOR_RED);  // Error
         }
         break;
         
@@ -227,8 +274,13 @@ void esp_zb_app_signal_handler(esp_zb_app_signal_t *signal_struct)
         if (err_status == ESP_OK) {
             deferred_driver_init();
             if (esp_zb_bdb_is_factory_new()) {
+                status_led_start_blink();  // Start blinking during join
                 esp_zb_bdb_start_top_level_commissioning(ESP_ZB_BDB_MODE_NETWORK_STEERING);
+            } else {
+                led_set_status(LED_COLOR_GREEN);  // Previously joined, should reconnect
             }
+        } else {
+            led_set_status(LED_COLOR_RED);  // Error
         }
         break;
         
@@ -240,6 +292,8 @@ void esp_zb_app_signal_handler(esp_zb_app_signal_t *signal_struct)
             ESP_LOGI(TAG, "[JOIN] PAN ID: 0x%04hx, Channel: %d", 
                      esp_zb_get_pan_id(), esp_zb_get_current_channel());
             
+            status_led_stop_blink();  // Stop blinking
+            led_set_status(LED_COLOR_GREEN);  // Connected!
             ota_validation_zigbee_connected();
             
             /* Start periodic sensor updates */
@@ -247,6 +301,8 @@ void esp_zb_app_signal_handler(esp_zb_app_signal_t *signal_struct)
             ESP_LOGI(TAG, "[JOIN] Setup complete!");
         } else {
             ESP_LOGW(TAG, "[JOIN] Network steering failed, retrying...");
+            status_led_stop_blink();  // Stop blinking
+            led_set_status(LED_COLOR_RED);  // Join failed - show error
             esp_zb_scheduler_alarm((esp_zb_callback_t)bdb_start_top_level_commissioning_cb, 
                                   ESP_ZB_BDB_MODE_NETWORK_STEERING, 1000);
         }
@@ -254,6 +310,8 @@ void esp_zb_app_signal_handler(esp_zb_app_signal_t *signal_struct)
         
     case ESP_ZB_ZDO_SIGNAL_LEAVE:
         ESP_LOGW(TAG, "[LEAVE] Device left the network");
+        status_led_stop_blink();  // Stop any blinking
+        led_set_status(LED_COLOR_ORANGE);  // Left network
         esp_zb_scheduler_alarm((esp_zb_callback_t)bdb_start_top_level_commissioning_cb,
                               ESP_ZB_BDB_MODE_NETWORK_STEERING, 30000);
         break;
@@ -371,6 +429,17 @@ static esp_err_t zb_attribute_handler(const esp_zb_zcl_set_attr_value_message_t 
             if (updated) {
                 led_set_thresholds(&thresholds);
             }
+        }
+    }
+    
+    /* Handle Status LED endpoint */
+    if (message->info.dst_endpoint == HA_ESP_STATUS_LED_ENDPOINT) {
+        /* Handle On/Off cluster for status LED enable/disable */
+        if (message->info.cluster == ESP_ZB_ZCL_CLUSTER_ID_ON_OFF &&
+            message->attribute.id == ESP_ZB_ZCL_ATTR_ON_OFF_ON_OFF_ID) {
+            bool on_off = *(bool *)message->attribute.data.value;
+            ESP_LOGI(TAG, "Status LED %s", on_off ? "enabled" : "disabled");
+            led_set_status_enable(on_off);
         }
     }
     
@@ -773,6 +842,31 @@ static void esp_zb_task(void *pvParameters)
         .app_device_version = 0
     };
     esp_zb_ep_list_add_ep(ep_list, led_clusters, endpoint9_config);
+    
+    /* Endpoint 10: Zigbee Status LED */
+    esp_zb_cluster_list_t *status_led_clusters = esp_zb_zcl_cluster_list_create();
+    
+    esp_zb_basic_cluster_cfg_t basic_status_cfg = {
+        .zcl_version = ESP_ZB_ZCL_BASIC_ZCL_VERSION_DEFAULT_VALUE,
+        .power_source = ESP_ZB_ZCL_BASIC_POWER_SOURCE_DEFAULT_VALUE,
+    };
+    ESP_ERROR_CHECK(esp_zb_cluster_list_add_basic_cluster(status_led_clusters, esp_zb_basic_cluster_create(&basic_status_cfg), ESP_ZB_ZCL_CLUSTER_SERVER_ROLE));
+    
+    /* On/Off cluster for status LED enable/disable */
+    esp_zb_on_off_cluster_cfg_t status_led_on_off_cfg = {
+        .on_off = true,  // Status LED enabled by default
+    };
+    esp_zb_attribute_list_t *status_led_on_off_cluster = esp_zb_on_off_cluster_create(&status_led_on_off_cfg);
+    ESP_ERROR_CHECK(esp_zb_cluster_list_add_on_off_cluster(status_led_clusters, status_led_on_off_cluster, ESP_ZB_ZCL_CLUSTER_SERVER_ROLE));
+    ESP_ERROR_CHECK(esp_zb_cluster_list_add_identify_cluster(status_led_clusters, esp_zb_identify_cluster_create(NULL), ESP_ZB_ZCL_CLUSTER_SERVER_ROLE));
+    
+    esp_zb_endpoint_config_t endpoint10_config = {
+        .endpoint = HA_ESP_STATUS_LED_ENDPOINT,
+        .app_profile_id = ESP_ZB_AF_HA_PROFILE_ID,
+        .app_device_id = ESP_ZB_HA_ON_OFF_LIGHT_DEVICE_ID,
+        .app_device_version = 0
+    };
+    esp_zb_ep_list_add_ep(ep_list, status_led_clusters, endpoint10_config);
     
     /* Register the device */
     esp_zb_device_register(ep_list);

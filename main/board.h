@@ -45,4 +45,8 @@
 #define LED_HUM_GPIO GPIO_NUM_10  /* Humidity level indicator */
 #endif
 
+#ifndef LED_STATUS_GPIO
+#define LED_STATUS_GPIO GPIO_NUM_23  /* Zigbee network status indicator */
+#endif
+
 #define LED_STATUS_NUM_LEDS 1  /* Number of LEDs per indicator (1 each) */

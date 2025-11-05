@@ -30,6 +30,7 @@ static const gpio_num_t LED_GPIO_MAP[LED_ID_MAX] = {
     [LED_ID_NOX] = LED_NOX_GPIO,
     [LED_ID_PM25] = LED_PM25_GPIO,
     [LED_ID_HUMIDITY] = LED_HUM_GPIO,
+    [LED_ID_STATUS] = LED_STATUS_GPIO,
 };
 
 /* LED names for logging */
@@ -39,6 +40,7 @@ static const char* LED_NAMES[LED_ID_MAX] = {
     [LED_ID_NOX] = "NOx",
     [LED_ID_PM25] = "PM2.5",
     [LED_ID_HUMIDITY] = "Humidity",
+    [LED_ID_STATUS] = "Status",
 };
 
 /* Default thresholds */
@@ -64,7 +66,14 @@ static rmt_channel_handle_t s_led_channels[LED_ID_MAX] = {NULL};
 static rmt_encoder_handle_t s_led_encoder = NULL;
 
 /* LED state tracking */
-static led_color_t s_current_colors[LED_ID_MAX] = {LED_COLOR_OFF, LED_COLOR_OFF, LED_COLOR_OFF, LED_COLOR_OFF, LED_COLOR_OFF};
+static led_color_t s_current_colors[LED_ID_MAX] = {
+    LED_COLOR_OFF, LED_COLOR_OFF, LED_COLOR_OFF, 
+    LED_COLOR_OFF, LED_COLOR_OFF, LED_COLOR_OFF
+};
+
+/* Status LED control */
+static bool s_status_led_enabled = true;  // Status LED enabled by default
+static led_color_t s_status_color = LED_COLOR_ORANGE;  // Default: not joined
 
 /* RGB color values (GRB order for SK6812) */
 typedef struct {
@@ -471,4 +480,53 @@ esp_err_t led_update_from_sensors(const led_sensor_data_t *sensor_data)
     }
     
     return ESP_OK;
+}
+
+/**
+ * @brief Set Zigbee status LED color
+ */
+esp_err_t led_set_status(led_color_t color)
+{
+    if (color >= LED_COLOR_OFF && color <= LED_COLOR_RED) {
+        s_status_color = color;
+        
+        // Only update if status LED is enabled
+        if (s_status_led_enabled) {
+            led_set_color(LED_ID_STATUS, color);
+            ESP_LOGI(TAG, "Status LED: %s", 
+                     color == LED_COLOR_GREEN ? "GREEN (Connected)" :
+                     color == LED_COLOR_ORANGE ? "ORANGE (Not joined)" :
+                     color == LED_COLOR_RED ? "RED (Error)" : "OFF");
+        }
+        return ESP_OK;
+    }
+    return ESP_ERR_INVALID_ARG;
+}
+
+/**
+ * @brief Enable or disable status LED
+ */
+esp_err_t led_set_status_enable(bool enable)
+{
+    s_status_led_enabled = enable;
+    
+    if (enable) {
+        // Restore status color
+        led_set_color(LED_ID_STATUS, s_status_color);
+        ESP_LOGI(TAG, "Status LED enabled");
+    } else {
+        // Turn off
+        led_set_color(LED_ID_STATUS, LED_COLOR_OFF);
+        ESP_LOGI(TAG, "Status LED disabled");
+    }
+    
+    return ESP_OK;
+}
+
+/**
+ * @brief Check if status LED is enabled
+ */
+bool led_is_status_enabled(void)
+{
+    return s_status_led_enabled;
 }

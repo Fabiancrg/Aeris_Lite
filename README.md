@@ -244,9 +244,10 @@ Aeris_zb/
 ### Zigbee Configuration
 
 The device is configured as a Zigbee Router:
-- **Endpoints**: 1-9 (sensor data + LED configuration)
+- **Endpoints**: 1-10 (sensor data + LED configuration + status LED)
   - Endpoints 1-8: Sensor data (Temperature, Humidity, Pressure, PM1.0, PM2.5, PM10, VOC, NOx, CO2)
-  - Endpoint 9: LED configuration and control
+  - Endpoint 9: Air quality LED configuration and control
+  - Endpoint 10: Zigbee status LED control
 - **Profile**: Home Automation (0x0104)
 - **Device IDs**: Various sensor types + On/Off output for LED control
 - **Channel Mask**: All channels
@@ -254,7 +255,7 @@ The device is configured as a Zigbee Router:
 
 ### LED Configuration
 
-Configure LED behavior via Zigbee2MQTT endpoint 9:
+**Air Quality LEDs (5 LEDs)** - Configure via Zigbee2MQTT endpoint 9:
 - **Master On/Off**: Single switch to enable/disable all LEDs (On/Off cluster)
 - **Individual Control**: Bitmask attribute (0xF00C) for per-LED enable/disable
   - Set to `0x1F` (31) for all LEDs
@@ -267,6 +268,16 @@ Configure LED behavior via Zigbee2MQTT endpoint 9:
 - Master OFF → All LEDs off (ignores bitmask)
 - Master ON + bit set → LED shows sensor status color
 - Master ON + bit clear → LED off
+
+**Zigbee Status LED (1 LED)** - Configure via Zigbee2MQTT endpoint 10:
+- **On/Off Control**: Enable/disable status LED
+- **Automatic Status Indication**:
+  - 🟢 **Green**: Successfully connected to Zigbee coordinator
+  - 🟡 **Blinking Green/Orange**: Actively joining network (searching for coordinator)
+  -  **Orange**: Not joined to any network or left the network (idle)
+  - 🔴 **Red**: Error during initialization or join failed
+- **GPIO Pin**: GPIO23 (configurable in `main/board.h`)
+- **Blink Pattern**: 500ms interval during network join process
 
 See [LED Configuration Guide](doc/LED_CONFIGURATION.md) for detailed threshold settings.
 
@@ -336,7 +347,7 @@ On first boot, the device will automatically enter network steering mode. Once j
 
 1. Put your coordinator in pairing mode
 2. Power on the ESP32-C6 device
-3. Wait for the device to join (check logs)
+3. Wait for the device to join (check logs - status LED will turn green when connected)
 4. The air quality sensor will appear with the following entities:
    - Temperature (°C)
    - Humidity (%)
@@ -345,10 +356,11 @@ On first boot, the device will automatically enter network steering mode. Once j
    - VOC Index (1-500)
    - NOx Index (1-500)
    - CO2 (ppm)
-   - **LED Master Switch** (On/Off - controls all LEDs)
+   - **Air Quality LED Master Switch** (On/Off - controls all 5 air quality LEDs)
    - **LED Enable Mask** (0-31 - individual LED control)
    - **LED Thresholds** (configurable warning/danger levels)
    - **PM Polling Interval** (0-86400 seconds - power management)
+   - **Status LED Switch** (On/Off - controls Zigbee status LED)
 
 ### LED Control Examples
 
@@ -375,20 +387,32 @@ await publish('zigbee2mqtt/aeris/set', {led_enable_mask: 13});  // 0x0D
 
 // Disable all LEDs via bitmask (master can still be ON)
 await publish('zigbee2mqtt/aeris/set', {led_enable_mask: 0});
+
+// Status LED control (endpoint 10)
+await publish('zigbee2mqtt/aeris_status/set', {state: 'ON'});   // Enable status LED
+await publish('zigbee2mqtt/aeris_status/set', {state: 'OFF'});  // Disable status LED
 ```
 
 ### Visual LED Status
 
-The 5 RGB LEDs provide real-time visual feedback:
+**Air Quality LEDs (5 RGB LEDs)** provide real-time visual feedback:
 - **CO2 LED**: Green/Orange/Red based on CO2 levels
 - **VOC LED**: Green/Orange/Red based on VOC Index
 - **NOx LED**: Green/Orange/Red based on NOx Index
 - **PM2.5 LED**: Green/Orange/Red based on particulate matter
 - **Humidity LED**: Green/Orange/Red based on humidity range
 
+**Status LED (1 RGB LED)** shows Zigbee network state:
+- 🟢 **Green**: Connected to coordinator
+- 🟡 **Blinking Green/Orange**: Joining network (searching)
+- 🟠 **Orange**: Not joined or left network (idle)
+- 🔴 **Red**: Join failed or error state (will retry)
+
 **At a glance**, you can see:
-- All green = Excellent air quality
+- All green (air quality) = Excellent air quality
 - Mixed colors = Some parameters need attention
+- Status LED solid green = Device is online and connected
+- Status LED blinking = Device is trying to join network
 - Red LEDs = Immediate action needed (ventilate, increase/decrease humidity, etc.)
 
 Configure thresholds in Zigbee2MQTT to match your preferences. See [LED Configuration Guide](doc/LED_CONFIGURATION.md).
@@ -674,21 +698,29 @@ All HVAC control logic has been replaced with air quality sensor reading functio
 - **SCD40**: Wait at least 5 seconds for first measurement after initialization
 
 ### RGB LEDs not working
-- **All LEDs off or not lighting**:
+- **All air quality LEDs off or not lighting**:
   - Check GPIO wiring for all 5 LEDs (GPIO21, 4, 8, 5, 10)
   - Verify LED power supply (3.3V or 5V depending on SK6812 spec)
   - Check serial logs for RMT initialization errors
   - Ensure master switch is ON (endpoint 9, On/Off cluster)
   - Verify LED enable mask is not 0x00 (check attribute 0xF00C)
   - Look for "LED initialized" messages in logs
+- **Status LED not working**:
+  - Check GPIO23 wiring and connection
+  - Verify status LED is enabled (endpoint 10, On/Off cluster)
+  - Check logs for "Status LED: GREEN/ORANGE/RED" messages
+  - Should blink green/orange during join, solid green when connected
+  - Should show orange on startup, blink during pairing
+  - If always RED, check Zigbee coordinator availability
+  - If not blinking during join, check timer creation logs
 - **Some LEDs work, others don't**:
   - Check individual GPIO connections
-  - Verify all 5 RMT channels initialized (check logs)
+  - Verify all 6 RMT channels initialized (check logs)
   - Test each LED's GPIO pin continuity
   - Check for damaged LEDs
   - **Check LED enable mask** - specific LEDs may be disabled via bitmask
     - Read attribute 0xF00C to see which LEDs are enabled
-    - Set to 0x1F (31) to enable all LEDs
+    - Set to 0x1F (31) to enable all 5 air quality LEDs
 - **LEDs show wrong colors**:
   - Verify sensor readings are accurate (check sensor endpoints)
   - Review threshold configuration in Zigbee2MQTT
@@ -696,7 +728,7 @@ All HVAC control logic has been replaced with air quality sensor reading functio
   - Default thresholds may not match your environment - adjust via endpoint 9
 - **Can't change LED thresholds**:
   - Verify endpoint 9 is exposed in Zigbee2MQTT
-  - Check custom attribute IDs (0xF000-0xF00C) are mapped
+  - Check custom attribute IDs (0xF000-0xF00D) are mapped
   - Try re-pairing device if attributes missing
   - See [LED Configuration Guide](doc/LED_CONFIGURATION.md) for Z2M converter
 - **Individual LED control not working**:
@@ -705,7 +737,7 @@ All HVAC control logic has been replaced with air quality sensor reading functio
   - Check logs for "LED enable mask: 0x..." messages
   - Remember: Master OFF overrides all individual settings
 
-**Power Note**: 5 LEDs at full brightness can draw ~300mA. Ensure adequate power supply (1A recommended).
+**Power Note**: 6 LEDs (5 air quality + 1 status) at full brightness can draw ~360mA. Ensure adequate power supply (1A recommended).
 
 ### Build errors
 - Make sure ESP-IDF v5.5.1+ is installed

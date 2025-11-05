@@ -2,6 +2,7 @@
  * RGB LED Indicator Driver (SK6812)
  * Provides visual feedback for air quality sensor readings
  * 5 separate LEDs: CO2, VOC, NOx, PM2.5, Humidity
+ * 1 status LED: Zigbee network status
  */
 
 #ifndef LED_INDICATOR_H
@@ -18,6 +19,7 @@ typedef enum {
     LED_ID_NOX,
     LED_ID_PM25,
     LED_ID_HUMIDITY,
+    LED_ID_STATUS,      // Zigbee network status
     LED_ID_MAX
 } led_id_t;
 
@@ -121,5 +123,25 @@ esp_err_t led_set_enable(bool enable);
  * @return true if enabled, false otherwise
  */
 bool led_is_enabled(void);
+
+/**
+ * @brief Set Zigbee status LED color
+ * @param color Color to set (GREEN=connected, ORANGE=not joined, RED=error)
+ * @return ESP_OK on success
+ */
+esp_err_t led_set_status(led_color_t color);
+
+/**
+ * @brief Enable or disable status LED
+ * @param enable true to enable, false to disable
+ * @return ESP_OK on success
+ */
+esp_err_t led_set_status_enable(bool enable);
+
+/**
+ * @brief Check if status LED is enabled
+ * @return true if enabled, false otherwise
+ */
+bool led_is_status_enabled(void);
 
 #endif // LED_INDICATOR_H

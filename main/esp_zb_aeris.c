@@ -350,6 +350,19 @@ static esp_err_t zb_attribute_handler(const esp_zb_zcl_set_attr_value_message_t 
                              !!(value & (1<<0)), !!(value & (1<<1)), !!(value & (1<<2)),
                              !!(value & (1<<3)), !!(value & (1<<4)));
                     break;
+                case ZCL_LED_ATTR_PM_POLL_INTERVAL:
+                    {
+                        uint32_t interval = *(uint32_t *)message->attribute.data.value;
+                        ESP_LOGI(TAG, "PM sensor polling interval: %lu seconds %s", 
+                                 interval, interval == 0 ? "(continuous)" : "");
+                        esp_err_t err = aeris_set_pm_polling_interval(interval);
+                        if (err != ESP_OK) {
+                            ESP_LOGW(TAG, "Failed to set PM polling interval: %s", 
+                                     esp_err_to_name(err));
+                        }
+                        updated = false;  // Don't update thresholds
+                    }
+                    break;
                 default:
                     updated = false;
                     break;
@@ -733,6 +746,7 @@ static void esp_zb_task(void *pvParameters)
     uint16_t pm25_orange_default = 25;
     uint16_t pm25_red_default = 55;
     uint8_t led_mask_default = 0x1F;  // All 5 LEDs enabled by default (bits 0-4)
+    uint32_t pm_poll_interval_default = 300;  // 5 minutes default polling interval
     
     esp_zb_analog_output_cluster_add_attr(led_config_cluster, ZCL_LED_ATTR_VOC_ORANGE, &voc_orange_default);
     esp_zb_analog_output_cluster_add_attr(led_config_cluster, ZCL_LED_ATTR_VOC_RED, &voc_red_default);
@@ -747,6 +761,7 @@ static void esp_zb_task(void *pvParameters)
     esp_zb_analog_output_cluster_add_attr(led_config_cluster, ZCL_LED_ATTR_PM25_ORANGE, &pm25_orange_default);
     esp_zb_analog_output_cluster_add_attr(led_config_cluster, ZCL_LED_ATTR_PM25_RED, &pm25_red_default);
     esp_zb_analog_output_cluster_add_attr(led_config_cluster, ZCL_LED_ATTR_ENABLE_MASK, &led_mask_default);
+    esp_zb_analog_output_cluster_add_attr(led_config_cluster, ZCL_LED_ATTR_PM_POLL_INTERVAL, &pm_poll_interval_default);
     
     ESP_ERROR_CHECK(esp_zb_cluster_list_add_analog_output_cluster(led_clusters, led_config_cluster, ESP_ZB_ZCL_CLUSTER_SERVER_ROLE));
     ESP_ERROR_CHECK(esp_zb_cluster_list_add_identify_cluster(led_clusters, esp_zb_identify_cluster_create(NULL), ESP_ZB_ZCL_CLUSTER_SERVER_ROLE));

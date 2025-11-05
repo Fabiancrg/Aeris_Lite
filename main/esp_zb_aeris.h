@@ -39,6 +39,7 @@
 #define ZCL_LED_ATTR_PM25_ORANGE        0xF00A
 #define ZCL_LED_ATTR_PM25_RED           0xF00B
 #define ZCL_LED_ATTR_ENABLE_MASK        0xF00C  // Bitmask for individual LED control
+#define ZCL_LED_ATTR_PM_POLL_INTERVAL   0xF00D  // PM sensor polling interval in seconds (0=continuous)
 
 #define ESP_ZB_PRIMARY_CHANNEL_MASK     ESP_ZB_TRANSCEIVER_ALL_CHANNELS_MASK /* Zigbee primary channel mask use in the example */
 

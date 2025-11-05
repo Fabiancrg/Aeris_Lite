@@ -53,10 +53,16 @@ typedef struct {
 
 /* UART Configuration for PMSA003A */
 #define PMSA003A_UART_NUM       UART_NUM_1
-#define PMSA003A_UART_TX_PIN    18   // GPIO18 (TX - not used for PMSA003A)
-#define PMSA003A_UART_RX_PIN    20   // GPIO20 (RX from PMSA003A)
+#define PMSA003A_UART_TX_PIN    18   // GPIO18 (TX to PMSA003A RX for commands)
+#define PMSA003A_UART_RX_PIN    20   // GPIO20 (RX from PMSA003A TX)
 #define PMSA003A_UART_BAUD      9600
 #define PMSA003A_UART_BUF_SIZE  512
+
+/* PMSA003A operating modes */
+typedef enum {
+    PMSA003A_MODE_PASSIVE = 0,  // Continuous automatic output
+    PMSA003A_MODE_ACTIVE = 1    // Command-driven with sleep/wake
+} pmsa003a_mode_t;
 
 /**
  * @brief Initialize air quality sensor driver
@@ -132,6 +138,42 @@ esp_err_t aeris_read_voc_nox_raw(uint16_t *voc_raw, uint16_t *nox_raw);
  * @return ESP_OK on success
  */
 esp_err_t aeris_read_co2(uint16_t *co2_ppm);
+
+/**
+ * @brief Set PMSA003A polling interval (active mode only)
+ * 
+ * @param interval_seconds Polling interval in seconds (0 = continuous/passive mode)
+ * @return ESP_OK on success
+ */
+esp_err_t aeris_set_pm_polling_interval(uint32_t interval_seconds);
+
+/**
+ * @brief Get current PMSA003A polling interval
+ * 
+ * @return Current polling interval in seconds (0 = continuous/passive mode)
+ */
+uint32_t aeris_get_pm_polling_interval(void);
+
+/**
+ * @brief Wake PMSA003A sensor from sleep
+ * 
+ * @return ESP_OK on success
+ */
+esp_err_t pmsa003a_wake(void);
+
+/**
+ * @brief Put PMSA003A sensor to sleep
+ * 
+ * @return ESP_OK on success
+ */
+esp_err_t pmsa003a_sleep(void);
+
+/**
+ * @brief Request PM reading from PMSA003A (active mode)
+ * 
+ * @return ESP_OK on success
+ */
+esp_err_t pmsa003a_request_read(void);
 
 #ifdef __cplusplus
 }

@@ -120,6 +120,11 @@ static aeris_sensor_state_t current_state = {
 static pmsa003a_data_t pmsa003a_data = {0};
 static bool pmsa003a_data_valid = false;
 
+/* PMSA003A mode control */
+static pmsa003a_mode_t pmsa003a_current_mode = PMSA003A_MODE_PASSIVE;
+static uint32_t pmsa003a_polling_interval_s = 300; // Default 5 minutes
+static TimerHandle_t pmsa003a_polling_timer = NULL;
+
 /* SHT45 sensor state */
 static bool sht45_initialized = false;
 static uint32_t sht45_serial_number = 0;
@@ -763,6 +768,67 @@ static uint16_t pmsa003a_checksum(const uint8_t *data, size_t len)
 }
 
 /**
+ * @brief Send command to PMSA003A sensor
+ */
+static esp_err_t pmsa003a_send_command(const uint8_t *cmd, size_t len)
+{
+    int written = uart_write_bytes(PMSA003A_UART_NUM, (const char *)cmd, len);
+    if (written != len) {
+        ESP_LOGE(TAG, "PMSA003A command send failed: %d/%d bytes", written, len);
+        return ESP_FAIL;
+    }
+    
+    uart_wait_tx_done(PMSA003A_UART_NUM, pdMS_TO_TICKS(100));
+    ESP_LOGD(TAG, "PMSA003A command sent: %d bytes", len);
+    return ESP_OK;
+}
+
+/**
+ * @brief Wake up PMSA003A sensor
+ */
+esp_err_t pmsa003a_wake(void)
+{
+    // Wake command: 0x42 0x4D 0xE4 0x00 0x01 0x01 0x74
+    const uint8_t wake_cmd[] = {0x42, 0x4D, 0xE4, 0x00, 0x01, 0x01, 0x74};
+    
+    esp_err_t err = pmsa003a_send_command(wake_cmd, sizeof(wake_cmd));
+    if (err == ESP_OK) {
+        ESP_LOGI(TAG, "PMSA003A waking up, waiting 30s for stabilization");
+        pmsa003a_current_mode = PMSA003A_MODE_ACTIVE;
+    }
+    return err;
+}
+
+/**
+ * @brief Put PMSA003A sensor to sleep
+ */
+esp_err_t pmsa003a_sleep(void)
+{
+    // Sleep command: 0x42 0x4D 0xE4 0x00 0x00 0x01 0x73
+    const uint8_t sleep_cmd[] = {0x42, 0x4D, 0xE4, 0x00, 0x00, 0x01, 0x73};
+    
+    esp_err_t err = pmsa003a_send_command(sleep_cmd, sizeof(sleep_cmd));
+    if (err == ESP_OK) {
+        ESP_LOGI(TAG, "PMSA003A entering sleep mode");
+        pmsa003a_current_mode = PMSA003A_MODE_PASSIVE;
+        pmsa003a_data_valid = false; // Invalidate old data
+    }
+    return err;
+}
+
+/**
+ * @brief Request read from PMSA003A in active mode
+ */
+esp_err_t pmsa003a_request_read(void)
+{
+    // Active mode read command: 0x42 0x4D 0xE2 0x00 0x00 0x01 0x71
+    const uint8_t read_cmd[] = {0x42, 0x4D, 0xE2, 0x00, 0x00, 0x01, 0x71};
+    
+    ESP_LOGD(TAG, "PMSA003A requesting read in active mode");
+    return pmsa003a_send_command(read_cmd, sizeof(read_cmd));
+}
+
+/**
  * @brief Parse PMSA003A data frame
  */
 static bool pmsa003a_parse_frame(const uint8_t *frame)
@@ -816,6 +882,24 @@ static bool pmsa003a_parse_frame(const uint8_t *frame)
 }
 
 /**
+ * @brief Timer callback for PMSA003A polling
+ */
+static void pmsa003a_polling_timer_callback(TimerHandle_t xTimer)
+{
+    ESP_LOGI(TAG, "PMSA003A polling timer triggered");
+    
+    // Wake sensor
+    pmsa003a_wake();
+    
+    // Sensor will automatically start sending data in passive mode
+    // Data will be read by pmsa003a_task
+    
+    // After 35 seconds (30s warm-up + 5s reading), put sensor back to sleep
+    // This is handled by a task notification or another timer
+    // For simplicity, we'll use vTaskDelay in a simple approach
+}
+
+/**
  * @brief PMSA003A read task
  */
 static void pmsa003a_task(void *arg)
@@ -823,10 +907,28 @@ static void pmsa003a_task(void *arg)
     uint8_t frame[PMSA003A_FRAME_LENGTH];
     uint8_t buffer[256];
     size_t buffer_len = 0;
+    TickType_t wake_time = 0;
+    bool waiting_for_sleep = false;
     
     ESP_LOGI(TAG, "PMSA003A read task started");
     
+    // Start in sleep mode with default 5-minute polling
+    pmsa003a_sleep();
+    
     while (1) {
+        // Check if we need to sleep the sensor after wake period
+        if (waiting_for_sleep && (xTaskGetTickCount() - wake_time) > pdMS_TO_TICKS(35000)) {
+            ESP_LOGI(TAG, "PMSA003A wake period complete, going to sleep");
+            pmsa003a_sleep();
+            waiting_for_sleep = false;
+        }
+        
+        // If sensor just woke up, track the time
+        if (pmsa003a_current_mode == PMSA003A_MODE_ACTIVE && !waiting_for_sleep && wake_time == 0) {
+            wake_time = xTaskGetTickCount();
+            waiting_for_sleep = true;
+        }
+        
         // Read available data
         int len = uart_read_bytes(PMSA003A_UART_NUM, buffer + buffer_len, 
                                   sizeof(buffer) - buffer_len, pdMS_TO_TICKS(100));
@@ -846,6 +948,11 @@ static void pmsa003a_task(void *arg)
                             ESP_LOGI(TAG, "PMSA003A data: PM1.0=%d, PM2.5=%d, PM10=%d µg/m³",
                                      pmsa003a_data.pm1_0_atm, pmsa003a_data.pm2_5_atm, 
                                      pmsa003a_data.pm10_atm);
+                            
+                            // Reset wake time after successful read in polling mode
+                            if (pmsa003a_polling_interval_s > 0) {
+                                wake_time = 0;
+                            }
                         }
                         
                         // Remove processed frame from buffer
@@ -956,6 +1063,29 @@ esp_err_t aeris_driver_init(void)
         ESP_LOGE(TAG, "Failed to create PMSA003A task");
         return ESP_FAIL;
     }
+    
+    // Create polling timer for PMSA003A (default 5 minutes)
+    pmsa003a_polling_timer = xTimerCreate(
+        "pmsa_poll",
+        pdMS_TO_TICKS(pmsa003a_polling_interval_s * 1000),
+        pdTRUE,  // Auto-reload
+        NULL,
+        pmsa003a_polling_timer_callback
+    );
+    
+    if (pmsa003a_polling_timer == NULL) {
+        ESP_LOGE(TAG, "Failed to create PMSA003A polling timer");
+        return ESP_FAIL;
+    }
+    
+    // Start the timer
+    if (xTimerStart(pmsa003a_polling_timer, 0) != pdPASS) {
+        ESP_LOGE(TAG, "Failed to start PMSA003A polling timer");
+        return ESP_FAIL;
+    }
+    
+    ESP_LOGI(TAG, "PMSA003A polling timer started with %lu second interval", 
+             pmsa003a_polling_interval_s);
     
     ESP_LOGI(TAG, "Aeris driver initialized successfully");
     
@@ -1197,4 +1327,61 @@ esp_err_t aeris_read_co2(uint16_t *co2_ppm)
              *co2_ppm, temp_c, humidity_percent);
     
     return ESP_OK;
+}
+
+/**
+ * @brief Set PM sensor polling interval
+ */
+esp_err_t aeris_set_pm_polling_interval(uint32_t interval_s)
+{
+    if (interval_s != 0 && interval_s < 60) {
+        ESP_LOGW(TAG, "PM polling interval %lu s too short, minimum 60s or 0 for continuous", interval_s);
+        return ESP_ERR_INVALID_ARG;
+    }
+    
+    pmsa003a_polling_interval_s = interval_s;
+    
+    if (interval_s == 0) {
+        // Continuous mode - wake sensor and stop timer
+        ESP_LOGI(TAG, "Setting PMSA003A to continuous mode");
+        if (pmsa003a_polling_timer) {
+            xTimerStop(pmsa003a_polling_timer, 0);
+        }
+        pmsa003a_wake();
+    } else {
+        // Polled mode - put sensor to sleep and restart timer with new interval
+        ESP_LOGI(TAG, "Setting PMSA003A polling interval to %lu seconds", interval_s);
+        
+        if (pmsa003a_polling_timer) {
+            // Stop current timer
+            xTimerStop(pmsa003a_polling_timer, 0);
+            
+            // Change timer period
+            if (xTimerChangePeriod(pmsa003a_polling_timer, 
+                                   pdMS_TO_TICKS(interval_s * 1000), 
+                                   pdMS_TO_TICKS(100)) != pdPASS) {
+                ESP_LOGE(TAG, "Failed to change timer period");
+                return ESP_FAIL;
+            }
+            
+            // Start timer
+            if (xTimerStart(pmsa003a_polling_timer, 0) != pdPASS) {
+                ESP_LOGE(TAG, "Failed to start timer");
+                return ESP_FAIL;
+            }
+        }
+        
+        // Put sensor to sleep immediately
+        pmsa003a_sleep();
+    }
+    
+    return ESP_OK;
+}
+
+/**
+ * @brief Get PM sensor polling interval
+ */
+uint32_t aeris_get_pm_polling_interval(void)
+{
+    return pmsa003a_polling_interval_s;
 }

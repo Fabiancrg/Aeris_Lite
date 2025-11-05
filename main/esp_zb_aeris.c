@@ -21,6 +21,7 @@
 #include "esp_ota_ops.h"
 #include "esp_system.h"
 #include "freertos/timers.h"
+#include "led_indicator.h"
 
 #if !defined ZB_ROUTER_ROLE
 #error Define ZB_ROUTER_ROLE in idf.py menuconfig to compile Router source code.
@@ -170,6 +171,16 @@ static esp_err_t deferred_driver_init(void)
     
     vTaskDelay(pdMS_TO_TICKS(10));
     
+    /* Initialize RGB LED indicator */
+    ESP_LOGI(TAG, "[INIT] Initializing RGB LED indicator...");
+    esp_err_t led_ret = led_indicator_init();
+    if (led_ret != ESP_OK) {
+        ESP_LOGE(TAG, "[ERROR] LED initialization failed: %s", esp_err_to_name(led_ret));
+        ESP_LOGW(TAG, "[WARN] Continuing without LED indicator");
+    } else {
+        ESP_LOGI(TAG, "[OK] LED indicator initialized");
+    }
+    
     /* Initialize air quality sensor driver */
     ESP_LOGI(TAG, "[INIT] Initializing air quality sensors...");
     esp_err_t ret = aeris_driver_init();
@@ -264,7 +275,77 @@ static esp_err_t zb_attribute_handler(const esp_zb_zcl_set_attr_value_message_t 
     ESP_LOGI(TAG, "RX: endpoint(%d), cluster(0x%x), attr(0x%x)", 
              message->info.dst_endpoint, message->info.cluster, message->attribute.id);
     
-    // Air quality sensors are read-only, no attribute writes expected
+    /* Handle LED configuration endpoint */
+    if (message->info.dst_endpoint == HA_ESP_LED_CONFIG_ENDPOINT) {
+        led_thresholds_t thresholds;
+        led_get_thresholds(&thresholds);
+        
+        /* Handle On/Off cluster for LED enable/disable */
+        if (message->info.cluster == ESP_ZB_ZCL_CLUSTER_ID_ON_OFF &&
+            message->attribute.id == ESP_ZB_ZCL_ATTR_ON_OFF_ON_OFF_ID) {
+            bool on_off = *(bool *)message->attribute.data.value;
+            ESP_LOGI(TAG, "LED %s", on_off ? "enabled" : "disabled");
+            led_set_enable(on_off);
+            thresholds.enabled = on_off;
+            led_set_thresholds(&thresholds);
+        }
+        /* Handle threshold attributes */
+        else if (message->info.cluster == ESP_ZB_ZCL_CLUSTER_ID_ANALOG_OUTPUT) {
+            uint16_t value = *(uint16_t *)message->attribute.data.value;
+            bool updated = true;
+            
+            switch (message->attribute.id) {
+                case ZCL_LED_ATTR_VOC_ORANGE:
+                    thresholds.voc_orange = value;
+                    ESP_LOGI(TAG, "VOC orange threshold: %d", value);
+                    break;
+                case ZCL_LED_ATTR_VOC_RED:
+                    thresholds.voc_red = value;
+                    ESP_LOGI(TAG, "VOC red threshold: %d", value);
+                    break;
+                case ZCL_LED_ATTR_CO2_ORANGE:
+                    thresholds.co2_orange = value;
+                    ESP_LOGI(TAG, "CO2 orange threshold: %d ppm", value);
+                    break;
+                case ZCL_LED_ATTR_CO2_RED:
+                    thresholds.co2_red = value;
+                    ESP_LOGI(TAG, "CO2 red threshold: %d ppm", value);
+                    break;
+                case ZCL_LED_ATTR_HUM_ORANGE_LOW:
+                    thresholds.humidity_orange_low = value;
+                    ESP_LOGI(TAG, "Humidity orange low threshold: %d%%", value);
+                    break;
+                case ZCL_LED_ATTR_HUM_ORANGE_HIGH:
+                    thresholds.humidity_orange_high = value;
+                    ESP_LOGI(TAG, "Humidity orange high threshold: %d%%", value);
+                    break;
+                case ZCL_LED_ATTR_HUM_RED_LOW:
+                    thresholds.humidity_red_low = value;
+                    ESP_LOGI(TAG, "Humidity red low threshold: %d%%", value);
+                    break;
+                case ZCL_LED_ATTR_HUM_RED_HIGH:
+                    thresholds.humidity_red_high = value;
+                    ESP_LOGI(TAG, "Humidity red high threshold: %d%%", value);
+                    break;
+                case ZCL_LED_ATTR_PM25_ORANGE:
+                    thresholds.pm25_orange = value;
+                    ESP_LOGI(TAG, "PM2.5 orange threshold: %d µg/m³", value);
+                    break;
+                case ZCL_LED_ATTR_PM25_RED:
+                    thresholds.pm25_red = value;
+                    ESP_LOGI(TAG, "PM2.5 red threshold: %d µg/m³", value);
+                    break;
+                default:
+                    updated = false;
+                    break;
+            }
+            
+            if (updated) {
+                led_set_thresholds(&thresholds);
+            }
+        }
+    }
+    
     return ESP_OK;
 }
 
@@ -345,6 +426,15 @@ static void sensor_update_zigbee_attributes(uint8_t param)
     esp_zb_zcl_set_attribute_val(HA_ESP_CO2_ENDPOINT, ESP_ZB_ZCL_CLUSTER_ID_CARBON_DIOXIDE_MEASUREMENT,
                                   ESP_ZB_ZCL_CLUSTER_SERVER_ROLE, ESP_ZB_ZCL_ATTR_CARBON_DIOXIDE_MEASUREMENT_MEASURED_VALUE_ID,
                                   &co2_value, false);
+    
+    /* Update LED based on sensor readings */
+    led_sensor_data_t led_data = {
+        .voc_index = state.voc_index,
+        .co2_ppm = state.co2_ppm,
+        .humidity_percent = state.humidity_percent,
+        .pm25_ug_m3 = state.pm2_5_ug_m3,
+    };
+    led_update_from_sensors(&led_data);
 }
 
 static void sensor_periodic_update(uint8_t param)
@@ -507,8 +597,6 @@ static void esp_zb_task(void *pvParameters)
     };
     esp_zb_ep_list_add_ep(ep_list, pm10_clusters, endpoint5_config);
     
-    esp_zb_ep_list_add_ep(ep_list, pm10_clusters, endpoint5_config);
-    
     /* Endpoint 6: VOC Index - using Analog Input cluster */
     esp_zb_cluster_list_t *voc_clusters = esp_zb_zcl_cluster_list_create();
     
@@ -533,8 +621,6 @@ static void esp_zb_task(void *pvParameters)
         .app_device_id = ESP_ZB_HA_SIMPLE_SENSOR_DEVICE_ID,
         .app_device_version = 0
     };
-    esp_zb_ep_list_add_ep(ep_list, voc_clusters, endpoint6_config);
-    
     esp_zb_ep_list_add_ep(ep_list, voc_clusters, endpoint6_config);
     
     /* Endpoint 7: CO2 - using Carbon Dioxide Measurement cluster */
@@ -562,6 +648,62 @@ static void esp_zb_task(void *pvParameters)
         .app_device_version = 0
     };
     esp_zb_ep_list_add_ep(ep_list, co2_clusters, endpoint7_config);
+    
+    /* Endpoint 8: LED Configuration - using On/Off cluster + custom attributes */
+    esp_zb_cluster_list_t *led_clusters = esp_zb_zcl_cluster_list_create();
+    
+    esp_zb_basic_cluster_cfg_t basic_led_cfg = {
+        .zcl_version = ESP_ZB_ZCL_BASIC_ZCL_VERSION_DEFAULT_VALUE,
+        .power_source = ESP_ZB_ZCL_BASIC_POWER_SOURCE_DEFAULT_VALUE,
+    };
+    ESP_ERROR_CHECK(esp_zb_cluster_list_add_basic_cluster(led_clusters, esp_zb_basic_cluster_create(&basic_led_cfg), ESP_ZB_ZCL_CLUSTER_SERVER_ROLE));
+    
+    /* On/Off cluster for LED enable/disable */
+    esp_zb_on_off_cluster_cfg_t led_on_off_cfg = {
+        .on_off = true,  // LED enabled by default
+    };
+    esp_zb_attribute_list_t *led_on_off_cluster = esp_zb_on_off_cluster_create(&led_on_off_cfg);
+    ESP_ERROR_CHECK(esp_zb_cluster_list_add_on_off_cluster(led_clusters, led_on_off_cluster, ESP_ZB_ZCL_CLUSTER_SERVER_ROLE));
+    
+    /* Add custom attributes for thresholds using Analog Output cluster as a container */
+    esp_zb_analog_output_cluster_cfg_t led_config_cfg = {
+        .present_value = 0.0f,  // Unused, just a placeholder
+    };
+    esp_zb_attribute_list_t *led_config_cluster = esp_zb_analog_output_cluster_create(&led_config_cfg);
+    
+    /* Add threshold attributes (all uint16_t) */
+    uint16_t voc_orange_default = 150;
+    uint16_t voc_red_default = 250;
+    uint16_t co2_orange_default = 1000;
+    uint16_t co2_red_default = 1500;
+    uint16_t hum_orange_low_default = 30;
+    uint16_t hum_orange_high_default = 70;
+    uint16_t hum_red_low_default = 20;
+    uint16_t hum_red_high_default = 80;
+    uint16_t pm25_orange_default = 25;
+    uint16_t pm25_red_default = 55;
+    
+    esp_zb_analog_output_cluster_add_attr(led_config_cluster, ZCL_LED_ATTR_VOC_ORANGE, &voc_orange_default);
+    esp_zb_analog_output_cluster_add_attr(led_config_cluster, ZCL_LED_ATTR_VOC_RED, &voc_red_default);
+    esp_zb_analog_output_cluster_add_attr(led_config_cluster, ZCL_LED_ATTR_CO2_ORANGE, &co2_orange_default);
+    esp_zb_analog_output_cluster_add_attr(led_config_cluster, ZCL_LED_ATTR_CO2_RED, &co2_red_default);
+    esp_zb_analog_output_cluster_add_attr(led_config_cluster, ZCL_LED_ATTR_HUM_ORANGE_LOW, &hum_orange_low_default);
+    esp_zb_analog_output_cluster_add_attr(led_config_cluster, ZCL_LED_ATTR_HUM_ORANGE_HIGH, &hum_orange_high_default);
+    esp_zb_analog_output_cluster_add_attr(led_config_cluster, ZCL_LED_ATTR_HUM_RED_LOW, &hum_red_low_default);
+    esp_zb_analog_output_cluster_add_attr(led_config_cluster, ZCL_LED_ATTR_HUM_RED_HIGH, &hum_red_high_default);
+    esp_zb_analog_output_cluster_add_attr(led_config_cluster, ZCL_LED_ATTR_PM25_ORANGE, &pm25_orange_default);
+    esp_zb_analog_output_cluster_add_attr(led_config_cluster, ZCL_LED_ATTR_PM25_RED, &pm25_red_default);
+    
+    ESP_ERROR_CHECK(esp_zb_cluster_list_add_analog_output_cluster(led_clusters, led_config_cluster, ESP_ZB_ZCL_CLUSTER_SERVER_ROLE));
+    ESP_ERROR_CHECK(esp_zb_cluster_list_add_identify_cluster(led_clusters, esp_zb_identify_cluster_create(NULL), ESP_ZB_ZCL_CLUSTER_SERVER_ROLE));
+    
+    esp_zb_endpoint_config_t endpoint8_config = {
+        .endpoint = HA_ESP_LED_CONFIG_ENDPOINT,
+        .app_profile_id = ESP_ZB_AF_HA_PROFILE_ID,
+        .app_device_id = ESP_ZB_HA_ON_OFF_OUTPUT_DEVICE_ID,
+        .app_device_version = 0
+    };
+    esp_zb_ep_list_add_ep(ep_list, led_clusters, endpoint8_config);
     
     /* Register the device */
     esp_zb_device_register(ep_list);

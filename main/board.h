@@ -23,3 +23,22 @@
 #ifndef XIAO_ANT_GPIO_SEL1
 #define XIAO_ANT_GPIO_SEL1 GPIO_NUM_14
 #endif
+
+/* RGB LED configuration (SK6812) - 4 separate LEDs for air quality indicators */
+#ifndef LED_CO2_GPIO
+#define LED_CO2_GPIO GPIO_NUM_21  /* CO2 level indicator */
+#endif
+
+#ifndef LED_VOC_GPIO
+#define LED_VOC_GPIO GPIO_NUM_4   /* VOC Index indicator */
+#endif
+
+#ifndef LED_PM25_GPIO
+#define LED_PM25_GPIO GPIO_NUM_5  /* PM2.5 level indicator */
+#endif
+
+#ifndef LED_HUM_GPIO
+#define LED_HUM_GPIO GPIO_NUM_10  /* Humidity level indicator */
+#endif
+
+#define LED_STATUS_NUM_LEDS 1  /* Number of LEDs per indicator (1 each) */

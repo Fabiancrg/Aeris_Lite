@@ -8,7 +8,17 @@
 [![License: GPL v3](https://img.shields.io/badge/Software-GPLv3-blue.svg)](./LICENSE)
 [![License: CC BY-NC-SA 4.0](https://img.shields.io/badge/Hardware-CC%20BY--NC--SA%204.0-green.svg)](./LICENSE-hardware)
 
-This project implements a Zigbee Device (Router) that reads air quality sensors and exposes them as standard Zigbee sensor endpoints.
+This project implements a Zigbee Router that reads air quality sensors and exposes them as standard Zigbee sensor endpoints with **real-time RGB LED visual indicators**.
+
+## Key Features
+
+✅ **8 Zigbee Endpoints**: Temperature, Humidity, Pressure, PM1.0, PM2.5, PM10, VOC Index, CO2, LED Config  
+✅ **5 High-Precision Sensors**: SHT45, LPS22HB, PMSA003A, SGP41, SCD40  
+✅ **4 RGB Status LEDs**: Independent visual feedback for CO2, VOC, PM2.5, and Humidity  
+✅ **Configurable Thresholds**: Adjust warning/danger levels via Zigbee2MQTT  
+✅ **Zigbee Router**: Can accept other devices (max 10 children)  
+✅ **OTA Support**: Firmware updates over Zigbee  
+✅ **Factory Reset**: Boot button for easy network reset
 
 ## Hardware Requirements
 
@@ -19,8 +29,10 @@ This project implements a Zigbee Device (Router) that reads air quality sensors 
   - **PMSA003A Particulate Matter sensor** via UART
   - **SGP41 VOC and NOx sensor** via I2C
   - **SCD40 CO2 sensor** via I2C
+- **4× SK6812 RGB LEDs** (air quality visual indicators)
 - I2C connection (SDA/SCL pins configurable)
 - UART connection for PMSA003A (RX pin configurable)
+- **Power supply**: 5V USB, minimum 1A recommended (to support PM sensor fan and 4 LEDs)
 
 ## Features
 
@@ -43,14 +55,23 @@ The Zigbee air quality sensor exposes the following sensor endpoints:
 - **Range**: 260-1260 hPa
 - **Accuracy**: ±0.025 hPa (typical)
 
-### Endpoint 3: Particulate Matter (PM) Sensor
-- **PM2.5 Measurement**: Fine particulate matter (µg/m³) from PMSA003A
-- **PM10 Measurement**: Coarse particulate matter (µg/m³) from PMSA003A
-- **PM1.0 Measurement**: Ultra-fine particulate matter (µg/m³) from PMSA003A
+### Endpoint 3: PM1.0 Sensor
+- **Analog Input Cluster (0x000C)**: PM1.0 concentration (µg/m³)
 - **Sensor**: Plantower PMSA003A (UART, 9600 baud)
+- **Description**: Ultra-fine particulate matter
+
+### Endpoint 4: PM2.5 Sensor
+- **Analog Input Cluster (0x000C)**: PM2.5 concentration (µg/m³)
+- **Sensor**: Plantower PMSA003A (UART, 9600 baud)
+- **Description**: Fine particulate matter
 - **Update Rate**: ~1 second (automatic)
 
-### Endpoint 4: VOC Index Sensor
+### Endpoint 5: PM10 Sensor
+- **Analog Input Cluster (0x000C)**: PM10 concentration (µg/m³)
+- **Sensor**: Plantower PMSA003A (UART, 9600 baud)
+- **Description**: Coarse particulate matter
+
+### Endpoint 6: VOC Index Sensor
 - **VOC Index** (1-500): Volatile Organic Compounds air quality index
 - **NOx Index** (1-500): Nitrogen Oxides air quality index
 - **Sensor**: Sensirion SGP41 (I2C)
@@ -58,7 +79,7 @@ The Zigbee air quality sensor exposes the following sensor endpoints:
 - **Update Rate**: 1 second recommended
 - **Note**: Requires temperature/humidity compensation
 
-### Endpoint 5: CO2 Sensor
+### Endpoint 7: CO2 Sensor
 - **CO2 Concentration Cluster (0x040D)**: Carbon dioxide in ppm
 - **Sensor**: Sensirion SCD40 (I2C)
 - **Range**: 400-2000 ppm (optimized for indoor air quality)
@@ -66,6 +87,43 @@ The Zigbee air quality sensor exposes the following sensor endpoints:
 - **Update Rate**: 5 seconds (automatic periodic measurement)
 - **Pressure Compensation**: Automatic compensation using LPS22HB pressure data
 - **Additional**: Built-in temperature and humidity sensor (bonus)
+
+### Endpoint 8: LED Configuration
+- **On/Off Cluster (0x0006)**: Enable/disable all 4 RGB status LEDs
+- **Custom Attributes (0xF000-0xF009)**: Configurable air quality thresholds
+- **Control**: Single switch controls all 4 LEDs simultaneously
+- **Thresholds**: Adjustable orange/red warning levels for VOC, CO2, Humidity, PM2.5
+
+## RGB LED Air Quality Indicators
+
+The device includes **4 separate RGB LEDs (SK6812)** that provide real-time visual feedback for air quality:
+
+### LED Indicators
+- **CO2 LED** (GPIO21): Shows carbon dioxide level status
+- **VOC LED** (GPIO4): Shows volatile organic compounds status
+- **PM2.5 LED** (GPIO5): Shows particulate matter status
+- **Humidity LED** (GPIO10): Shows humidity level status
+
+### Color Coding
+Each LED independently displays:
+- 🟢 **Green**: Parameter is in good/healthy range
+- 🟠 **Orange**: Parameter is not ideal (warning level)
+- 🔴 **Red**: Parameter is poor/unhealthy (danger level)
+
+### Features
+- **Independent operation**: Each LED shows only its corresponding sensor
+- **At-a-glance status**: Quickly identify which parameter needs attention
+- **Configurable thresholds**: Adjust warning/danger levels via Zigbee2MQTT
+- **Single control**: Enable/disable all 4 LEDs with one command
+- **Low power**: LEDs only update when color changes
+
+### Default Thresholds (all configurable)
+- **VOC Index**: Orange ≥150, Red ≥250
+- **CO2**: Orange ≥1000 ppm, Red ≥1500 ppm
+- **Humidity**: Orange <30% or >70%, Red <20% or >80%
+- **PM2.5**: Orange ≥25 µg/m³, Red ≥55 µg/m³
+
+See [LED Configuration Guide](doc/LED_CONFIGURATION.md) for detailed setup and usage.
 
 ## I2C and UART Configuration
 
@@ -110,11 +168,17 @@ Aeris_zb/
 │   ├── esp_zb_aeris.h         # Zigbee configuration header
 │   ├── aeris_driver.c         # Air quality sensor driver implementation
 │   ├── aeris_driver.h         # Sensor driver header
+│   ├── led_indicator.c        # RGB LED driver (4 LEDs via RMT)
+│   ├── led_indicator.h        # LED driver header
 │   ├── esp_zb_ota.c           # OTA update support
 │   ├── esp_zb_ota.h           # OTA header
-│   ├── board.h                # Board pin definitions
+│   ├── board.h                # Board pin definitions (GPIO mapping)
 │   ├── CMakeLists.txt         # Component build configuration
 │   └── idf_component.yml      # Component dependencies
+├── doc/
+│   ├── LED_CONFIGURATION.md   # LED setup and Zigbee2MQTT integration
+│   ├── LED_IMPLEMENTATION.md  # LED technical implementation details
+│   └── ENDPOINT_MAP.md        # Complete Zigbee endpoint architecture
 ├── CMakeLists.txt             # Project CMakeLists
 ├── sdkconfig                  # ESP-IDF configuration
 └── README.md                  # This file
@@ -141,11 +205,23 @@ Aeris_zb/
 
 ### Zigbee Configuration
 
-The device is configured as a Zigbee End Device (ZED):
-- **Endpoints**: 1-5 (one per sensor type)
+The device is configured as a Zigbee Router:
+- **Endpoints**: 1-8 (sensor data + LED configuration)
+  - Endpoints 1-7: Sensor data (Temperature, Humidity, Pressure, PM1.0, PM2.5, PM10, VOC, CO2)
+  - Endpoint 8: LED configuration and control
 - **Profile**: Home Automation (0x0104)
-- **Device IDs**: Various sensor types (Temperature, Humidity, Pressure, etc.)
+- **Device IDs**: Various sensor types + On/Off output for LED control
 - **Channel Mask**: All channels
+- **Max Children**: 10 (router can accept other devices)
+
+### LED Configuration
+
+Configure LED thresholds via Zigbee2MQTT endpoint 8:
+- **Enable/Disable**: Single On/Off switch controls all 4 LEDs
+- **Thresholds**: 10 configurable attributes (VOC, CO2, Humidity, PM2.5 orange/red levels)
+- **GPIO Pins**: Configurable in `main/board.h` (defaults: GPIO21, 4, 5, 10)
+
+See [LED Configuration Guide](doc/LED_CONFIGURATION.md) for detailed threshold settings.
 
 ### Sensor Configuration
 
@@ -171,6 +247,23 @@ On first boot, the device will automatically enter network steering mode. Once j
    - PM1.0, PM2.5, PM10 (µg/m³)
    - VOC Index (1-500)
    - CO2 (ppm)
+   - **LED Enable** (switch to control all 4 status LEDs)
+   - **LED Thresholds** (configurable warning/danger levels)
+
+### Visual LED Status
+
+The 4 RGB LEDs provide real-time visual feedback:
+- **CO2 LED**: Green/Orange/Red based on CO2 levels
+- **VOC LED**: Green/Orange/Red based on VOC Index
+- **PM2.5 LED**: Green/Orange/Red based on particulate matter
+- **Humidity LED**: Green/Orange/Red based on humidity range
+
+**At a glance**, you can see:
+- All green = Excellent air quality
+- Mixed colors = Some parameters need attention
+- Red LEDs = Immediate action needed (ventilate, increase/decrease humidity, etc.)
+
+Configure thresholds in Zigbee2MQTT to match your preferences. See [LED Configuration Guide](doc/LED_CONFIGURATION.md).
 
 ### Sensor Reading Updates
 
@@ -354,6 +447,38 @@ SDA       → GPIO 6 (I2C SDA)
 
 **Note**: SCD40 operates at 2.4-5.5V. Use 3.3V supply. Automatic periodic measurement every 5 seconds. Benefits from ambient pressure compensation provided by LPS22HB sensor.
 
+### SK6812 RGB LED Wiring (4 LEDs)
+
+The device uses 4 separate RGB LEDs for visual air quality feedback:
+
+```
+LED Purpose    GPIO    Connection
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+CO2 LED        21      Data line
+VOC LED        4       Data line
+PM2.5 LED      5       Data line
+Humidity LED   10      Data line
+
+For each LED:
+  Data → GPIO pin (see table above)
+  VCC  → 3.3V or 5V (depending on LED specification)
+  GND  → GND
+```
+
+**Notes**: 
+- SK6812 LEDs use WS2812 protocol via RMT peripheral
+- Each LED operates independently showing its sensor's status
+- All 4 LEDs can be enabled/disabled together via Zigbee
+- GPIO pins are configurable in `main/board.h`
+- Total LED current (all 4 at max brightness): ~240mA
+
+**Color Codes**:
+- 🟢 Green = Good air quality for that parameter
+- 🟠 Orange = Warning level (not ideal)
+- 🔴 Red = Danger level (poor air quality)
+
+See [LED Configuration Guide](doc/LED_CONFIGURATION.md) for threshold configuration via Zigbee2MQTT.
+
 ### Important: Gas Index Algorithm
 
 The SGP41 currently uses a **simplified placeholder** for VOC/NOx index calculation. For production use, integrate Sensirion's **Gas Index Algorithm**:
@@ -412,6 +537,31 @@ All HVAC control logic has been replaced with air quality sensor reading functio
 - Check log output for sensor read errors
 - Ensure reporting is configured on Zigbee coordinator
 - **SCD40**: Wait at least 5 seconds for first measurement after initialization
+
+### RGB LEDs not working
+- **All LEDs off or not lighting**:
+  - Check GPIO wiring for all 4 LEDs (GPIO21, 4, 5, 10)
+  - Verify LED power supply (3.3V or 5V depending on SK6812 spec)
+  - Check serial logs for RMT initialization errors
+  - Ensure LEDs are enabled via Zigbee On/Off attribute (endpoint 8)
+  - Look for "LED initialized" messages in logs
+- **Some LEDs work, others don't**:
+  - Check individual GPIO connections
+  - Verify all 4 RMT channels initialized (check logs)
+  - Test each LED's GPIO pin continuity
+  - Check for damaged LEDs
+- **LEDs show wrong colors**:
+  - Verify sensor readings are accurate (check sensor endpoints)
+  - Review threshold configuration in Zigbee2MQTT
+  - Check logs for "LED: GREEN/ORANGE/RED" messages
+  - Default thresholds may not match your environment - adjust via endpoint 8
+- **Can't change LED thresholds**:
+  - Verify endpoint 8 is exposed in Zigbee2MQTT
+  - Check custom attribute IDs (0xF000-0xF009) are mapped
+  - Try re-pairing device if attributes missing
+  - See [LED Configuration Guide](doc/LED_CONFIGURATION.md) for Z2M converter
+
+**Power Note**: 4 LEDs at full brightness can draw ~240mA. Ensure adequate power supply (1A recommended).
 
 ### Build errors
 - Make sure ESP-IDF v5.5.1+ is installed

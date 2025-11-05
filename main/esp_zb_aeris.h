@@ -22,6 +22,19 @@
 #define HA_ESP_PM10_ENDPOINT            5                                    /* PM10 sensor endpoint */
 #define HA_ESP_VOC_ENDPOINT             6                                    /* VOC Index sensor endpoint */
 #define HA_ESP_CO2_ENDPOINT             7                                    /* CO2 sensor endpoint */
+#define HA_ESP_LED_CONFIG_ENDPOINT      8                                    /* LED configuration endpoint */
+
+/* Custom attribute IDs for LED thresholds (manufacturer-specific range 0xF000-0xFFFF) */
+#define ZCL_LED_ATTR_VOC_ORANGE         0xF000
+#define ZCL_LED_ATTR_VOC_RED            0xF001
+#define ZCL_LED_ATTR_CO2_ORANGE         0xF002
+#define ZCL_LED_ATTR_CO2_RED            0xF003
+#define ZCL_LED_ATTR_HUM_ORANGE_LOW     0xF004
+#define ZCL_LED_ATTR_HUM_ORANGE_HIGH    0xF005
+#define ZCL_LED_ATTR_HUM_RED_LOW        0xF006
+#define ZCL_LED_ATTR_HUM_RED_HIGH       0xF007
+#define ZCL_LED_ATTR_PM25_ORANGE        0xF008
+#define ZCL_LED_ATTR_PM25_RED           0xF009
 
 #define ESP_ZB_PRIMARY_CHANNEL_MASK     ESP_ZB_TRANSCEIVER_ALL_CHANNELS_MASK /* Zigbee primary channel mask use in the example */
 

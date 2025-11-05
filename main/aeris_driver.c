@@ -135,7 +135,6 @@ static TickType_t sgp41_last_measure_time = 0;
 /* SCD40 sensor state */
 static bool scd40_initialized = false;
 static uint64_t scd40_serial_number = 0;
-static bool scd40_data_ready = false;
 
 /**
  * @brief Calculate CRC8 for SHT45 and SGP41 (polynomial 0x31, init 0xFF)

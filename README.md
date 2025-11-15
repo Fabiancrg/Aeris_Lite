@@ -12,7 +12,7 @@ This project implements a Zigbee Router that reads air quality sensors and expos
 
 ## Key Features
 
-✅ **9 Zigbee Endpoints**: Temperature, Humidity, Pressure, PM1.0, PM2.5, PM10, VOC Index, NOx Index, CO2, LED Config  
+✅ **10 Zigbee Endpoints**: Temperature, Humidity, Pressure, PM1.0, PM2.5, PM10, VOC Index, NOx Index, CO2, LED Config, Status LED  
 ✅ **5 High-Precision Sensors**: SHT45, LPS22HB, PMSA003A, SGP41, SCD40  
 ✅ **5 RGB Status LEDs**: Independent visual feedback for CO2, VOC, NOx, PM2.5, and Humidity  
 ✅ **Configurable Thresholds**: Adjust warning/danger levels via Zigbee2MQTT  
@@ -101,6 +101,15 @@ The Zigbee air quality sensor exposes the following sensor endpoints:
 - **Custom Attributes (0xF000-0xF00C)**: Configurable air quality thresholds and individual LED control
 - **Bitmask Control (0xF00C)**: Individual enable/disable for each of the 5 LEDs
 - **Thresholds**: Adjustable orange/red warning levels for VOC, NOx, CO2, Humidity, PM2.5
+
+### Endpoint 10: Status LED
+- **On/Off Cluster (0x0006)**: Enable/disable Zigbee status LED
+- **Automatic Status Indication**: Shows Zigbee network connection status
+  - 🟢 **Green**: Successfully connected to coordinator
+  - 🟡 **Blinking Green/Orange**: Joining network
+  - 🟠 **Orange**: Not joined to network
+  - 🔴 **Red**: Error during initialization
+- **GPIO**: GPIO23 (configurable)
 
 ## RGB LED Air Quality Indicators
 

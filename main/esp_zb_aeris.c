@@ -395,11 +395,11 @@ static esp_err_t zb_attribute_handler(const esp_zb_zcl_set_attr_value_message_t 
                     break;
                 case ZCL_LED_ATTR_PM25_ORANGE:
                     thresholds.pm25_orange = value;
-                    ESP_LOGI(TAG, "PM2.5 orange threshold: %d µg/m³", value);
+                    ESP_LOGI(TAG, "PM2.5 orange threshold: %d µg/m3", value);
                     break;
                 case ZCL_LED_ATTR_PM25_RED:
                     thresholds.pm25_red = value;
-                    ESP_LOGI(TAG, "PM2.5 red threshold: %d µg/m³", value);
+                    ESP_LOGI(TAG, "PM2.5 red threshold: %d µg/m3", value);
                     break;
                 case ZCL_LED_ATTR_ENABLE_MASK:
                     thresholds.led_mask = (uint8_t)value;
@@ -473,7 +473,7 @@ static void sensor_update_zigbee_attributes(uint8_t param)
     ESP_LOGI(TAG, "Updating Zigbee attributes:");
     ESP_LOGI(TAG, "  Temp: %.2f°C, Humidity: %.2f%%", state.temperature_c, state.humidity_percent);
     ESP_LOGI(TAG, "  Pressure: %.2fhPa", state.pressure_hpa);
-    ESP_LOGI(TAG, "  PM1.0: %.2f, PM2.5: %.2f, PM10: %.2f µg/m³", 
+    ESP_LOGI(TAG, "  PM1.0: %.2f, PM2.5: %.2f, PM10: %.2f µg/m3", 
              state.pm1_0_ug_m3, state.pm2_5_ug_m3, state.pm10_ug_m3);
     ESP_LOGI(TAG, "  VOC Index: %d, NOx Index: %d, CO2: %d ppm", state.voc_index, state.nox_index, state.co2_ppm);
     
@@ -567,6 +567,20 @@ static void esp_zb_task(void *pvParameters)
         .power_source = ESP_ZB_ZCL_BASIC_POWER_SOURCE_DEFAULT_VALUE,
     };
     esp_zb_attribute_list_t *basic_cluster = esp_zb_basic_cluster_create(&basic_cfg);
+    
+    /* Add optional Basic cluster attributes for Zigbee2MQTT */
+    static uint8_t app_version = 1;       // Application version
+    static uint8_t stack_version = 0x30;  // Zigbee 3.0
+    static uint8_t hw_version = 1;        // Hardware version
+    static char date_code[17] = "\x0A""2025-11-15";  // Build date
+    static char sw_build_id[17] = "\x05""v1.0.0";    // Software version
+    
+    esp_zb_basic_cluster_add_attr(basic_cluster, ESP_ZB_ZCL_ATTR_BASIC_APPLICATION_VERSION_ID, &app_version);
+    esp_zb_basic_cluster_add_attr(basic_cluster, ESP_ZB_ZCL_ATTR_BASIC_STACK_VERSION_ID, &stack_version);
+    esp_zb_basic_cluster_add_attr(basic_cluster, ESP_ZB_ZCL_ATTR_BASIC_HW_VERSION_ID, &hw_version);
+    esp_zb_basic_cluster_add_attr(basic_cluster, ESP_ZB_ZCL_ATTR_BASIC_DATE_CODE_ID, (void*)date_code);
+    esp_zb_basic_cluster_add_attr(basic_cluster, ESP_ZB_ZCL_ATTR_BASIC_SW_BUILD_ID, (void*)sw_build_id);
+    
     ESP_ERROR_CHECK(esp_zb_cluster_list_add_basic_cluster(temp_hum_clusters, basic_cluster, ESP_ZB_ZCL_CLUSTER_SERVER_ROLE));
     
     /* Add Temperature measurement cluster with REPORTING flag */
@@ -637,7 +651,7 @@ static void esp_zb_task(void *pvParameters)
     ESP_ERROR_CHECK(esp_zb_cluster_add_attr(pm1_cluster, ESP_ZB_ZCL_CLUSTER_ID_ANALOG_INPUT,
                                             ESP_ZB_ZCL_ATTR_ANALOG_INPUT_PRESENT_VALUE_ID, ESP_ZB_ZCL_ATTR_TYPE_SINGLE,
                                             ESP_ZB_ZCL_ATTR_ACCESS_READ_ONLY | ESP_ZB_ZCL_ATTR_ACCESS_REPORTING, &pm1_present_value));
-    char pm1_desc[] = "\x0B""PM1.0 µg/m³";
+    char pm1_desc[] = "\x0B""PM1.0 µg/m3";
     esp_zb_analog_input_cluster_add_attr(pm1_cluster, ESP_ZB_ZCL_ATTR_ANALOG_INPUT_DESCRIPTION_ID, pm1_desc);
     ESP_ERROR_CHECK(esp_zb_cluster_list_add_analog_input_cluster(pm1_clusters, pm1_cluster, ESP_ZB_ZCL_CLUSTER_SERVER_ROLE));
     ESP_ERROR_CHECK(esp_zb_cluster_list_add_identify_cluster(pm1_clusters, esp_zb_identify_cluster_create(NULL), ESP_ZB_ZCL_CLUSTER_SERVER_ROLE));
@@ -659,7 +673,7 @@ static void esp_zb_task(void *pvParameters)
     ESP_ERROR_CHECK(esp_zb_cluster_add_attr(pm25_cluster, ESP_ZB_ZCL_CLUSTER_ID_ANALOG_INPUT,
                                             ESP_ZB_ZCL_ATTR_ANALOG_INPUT_PRESENT_VALUE_ID, ESP_ZB_ZCL_ATTR_TYPE_SINGLE,
                                             ESP_ZB_ZCL_ATTR_ACCESS_READ_ONLY | ESP_ZB_ZCL_ATTR_ACCESS_REPORTING, &pm25_present_value));
-    char pm25_desc[] = "\x0C""PM2.5 µg/m³";
+    char pm25_desc[] = "\x0C""PM2.5 µg/m3";
     esp_zb_analog_input_cluster_add_attr(pm25_cluster, ESP_ZB_ZCL_ATTR_ANALOG_INPUT_DESCRIPTION_ID, pm25_desc);
     ESP_ERROR_CHECK(esp_zb_cluster_list_add_analog_input_cluster(pm25_clusters, pm25_cluster, ESP_ZB_ZCL_CLUSTER_SERVER_ROLE));
     ESP_ERROR_CHECK(esp_zb_cluster_list_add_identify_cluster(pm25_clusters, esp_zb_identify_cluster_create(NULL), ESP_ZB_ZCL_CLUSTER_SERVER_ROLE));
@@ -681,7 +695,7 @@ static void esp_zb_task(void *pvParameters)
     ESP_ERROR_CHECK(esp_zb_cluster_add_attr(pm10_cluster, ESP_ZB_ZCL_CLUSTER_ID_ANALOG_INPUT,
                                             ESP_ZB_ZCL_ATTR_ANALOG_INPUT_PRESENT_VALUE_ID, ESP_ZB_ZCL_ATTR_TYPE_SINGLE,
                                             ESP_ZB_ZCL_ATTR_ACCESS_READ_ONLY | ESP_ZB_ZCL_ATTR_ACCESS_REPORTING, &pm10_present_value));
-    char pm10_desc[] = "\x0B""PM10 µg/m³";
+    char pm10_desc[] = "\x0B""PM10 µg/m3";
     esp_zb_analog_input_cluster_add_attr(pm10_cluster, ESP_ZB_ZCL_ATTR_ANALOG_INPUT_DESCRIPTION_ID, pm10_desc);
     ESP_ERROR_CHECK(esp_zb_cluster_list_add_analog_input_cluster(pm10_clusters, pm10_cluster, ESP_ZB_ZCL_CLUSTER_SERVER_ROLE));
     ESP_ERROR_CHECK(esp_zb_cluster_list_add_identify_cluster(pm10_clusters, esp_zb_identify_cluster_create(NULL), ESP_ZB_ZCL_CLUSTER_SERVER_ROLE));
@@ -778,6 +792,21 @@ static void esp_zb_task(void *pvParameters)
     };
     esp_zb_attribute_list_t *led_config_cluster = esp_zb_analog_output_cluster_create(&led_config_cfg);
     
+    /* Add description attribute to avoid UNSUPPORTED_ATTRIBUTE errors */
+    static char led_config_desc[17] = "\x0D""LED Thresholds";
+    esp_zb_analog_output_cluster_add_attr(led_config_cluster, ESP_ZB_ZCL_ATTR_ANALOG_OUTPUT_DESCRIPTION_ID, led_config_desc);
+    
+    /* Add other standard Analog Output attributes that coordinators expect */
+    static float min_present_value = 0.0f;
+    static float max_present_value = 65535.0f;
+    static float resolution = 1.0f;
+    static bool out_of_service = false;
+    
+    esp_zb_analog_output_cluster_add_attr(led_config_cluster, ESP_ZB_ZCL_ATTR_ANALOG_OUTPUT_MIN_PRESENT_VALUE_ID, &min_present_value);
+    esp_zb_analog_output_cluster_add_attr(led_config_cluster, ESP_ZB_ZCL_ATTR_ANALOG_OUTPUT_MAX_PRESENT_VALUE_ID, &max_present_value);
+    esp_zb_analog_output_cluster_add_attr(led_config_cluster, ESP_ZB_ZCL_ATTR_ANALOG_OUTPUT_RESOLUTION_ID, &resolution);
+    esp_zb_analog_output_cluster_add_attr(led_config_cluster, ESP_ZB_ZCL_ATTR_ANALOG_OUTPUT_OUT_OF_SERVICE_ID, &out_of_service);
+    
     /* Add threshold attributes (all uint16_t) */
     uint16_t voc_orange_default = 150;
     uint16_t voc_red_default = 250;
@@ -838,6 +867,13 @@ static void esp_zb_task(void *pvParameters)
         .app_device_version = 0
     };
     esp_zb_ep_list_add_ep(ep_list, status_led_clusters, endpoint10_config);
+    
+    /* Add manufacturer info to primary endpoint */
+    zcl_basic_manufacturer_info_t info = {
+        .manufacturer_name = ESP_MANUFACTURER_NAME,
+        .model_identifier = ESP_MODEL_IDENTIFIER,
+    };
+    esp_zcl_utility_add_ep_basic_manufacturer_info(ep_list, HA_ESP_TEMP_HUM_ENDPOINT, &info);
     
     /* Register the device */
     esp_zb_device_register(ep_list);

@@ -170,7 +170,7 @@ Each LED independently displays:
 - **Humidity**: Orange <30% or >70%, Red <20% or >80%
 - **PM2.5**: Orange ≥25 µg/m³, Red ≥55 µg/m³
 
-See [LED Configuration Guide](doc/LED_CONFIGURATION.md) for detailed setup and usage.
+See [LED Configuration Guide](LED_CONFIGURATION.md) for detailed setup and usage.
 
 ## I2C and UART Configuration
 
@@ -221,14 +221,13 @@ Aeris_zb/
 │   ├── esp_zb_ota.h           # OTA header
 │   ├── board.h                # Board pin definitions (GPIO mapping)
 │   ├── CMakeLists.txt         # Component build configuration
-│   └── idf_component.yml      # Component dependencies
-├── doc/
-│   ├── LED_CONFIGURATION.md   # LED setup and Zigbee2MQTT integration
-│   ├── LED_IMPLEMENTATION.md  # LED technical implementation details
-│   └── ENDPOINT_MAP.md        # Complete Zigbee endpoint architecture
+│   └── idf_component.yml      # Component dependenciesnt architecture
 ├── CMakeLists.txt             # Project CMakeLists
 ├── sdkconfig                  # ESP-IDF configuration
-└── README.md                  # This file
+├── README.md                  # This file
+├── LED_CONFIGURATION.md   # LED setup and Zigbee2MQTT integration
+├── LED_IMPLEMENTATION.md  # LED technical implementation details
+└── ENDPOINT_MAP.md        # Complete Zigbee endpoi
 ```
 
 ## Building and Flashing
@@ -288,7 +287,7 @@ The device is configured as a Zigbee Router:
 - **GPIO Pin**: GPIO23 (configurable in `main/board.h`)
 - **Blink Pattern**: 500ms interval during network join process
 
-See [LED Configuration Guide](doc/LED_CONFIGURATION.md) for detailed threshold settings.
+See [LED Configuration Guide](LED_CONFIGURATION.md) for detailed threshold settings.
 
 ### Sensor Configuration
 
@@ -424,7 +423,7 @@ await publish('zigbee2mqtt/aeris_status/set', {state: 'OFF'});  // Disable statu
 - Status LED blinking = Device is trying to join network
 - Red LEDs = Immediate action needed (ventilate, increase/decrease humidity, etc.)
 
-Configure thresholds in Zigbee2MQTT to match your preferences. See [LED Configuration Guide](doc/LED_CONFIGURATION.md).
+Configure thresholds in Zigbee2MQTT to match your preferences. See [LED Configuration Guide](LED_CONFIGURATION.md).
 
 ### Sensor Reading Updates
 
@@ -641,7 +640,7 @@ For each LED:
 - 🟠 Orange = Warning level (not ideal)
 - 🔴 Red = Danger level (poor air quality)
 
-See [LED Configuration Guide](doc/LED_CONFIGURATION.md) for threshold configuration via Zigbee2MQTT.
+See [LED Configuration Guide](LED_CONFIGURATION.md) for threshold configuration via Zigbee2MQTT.
 
 ### Important: Gas Index Algorithm
 

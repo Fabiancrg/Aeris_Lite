@@ -109,18 +109,18 @@ The Zigbee air quality sensor exposes the following sensor endpoints:
   - 🟡 **Blinking Green/Orange**: Joining network
   - 🟠 **Orange**: Not joined to network
   - 🔴 **Red**: Error during initialization
-- **GPIO**: GPIO23 (configurable)
+- **GPIO**: GPIO8 (built-in LED on ESP32-C6 Supermini)
 
 ## RGB LED Air Quality Indicators
 
 The device includes **5 separate RGB LEDs (SK6812)** that provide real-time visual feedback for air quality:
 
 ### LED Indicators
-- **CO2 LED** (GPIO21): Shows carbon dioxide level status
+- **CO2 LED** (GPIO1): Shows carbon dioxide level status
 - **VOC LED** (GPIO4): Shows volatile organic compounds status
-- **NOx LED** (GPIO8): Shows nitrogen oxides status
+- **NOx LED** (GPIO15): Shows nitrogen oxides status
 - **PM2.5 LED** (GPIO5): Shows particulate matter status
-- **Humidity LED** (GPIO10): Shows humidity level status
+- **Humidity LED** (GPIO9): Shows humidity level status
 
 ### Color Coding
 Each LED independently displays:
@@ -660,11 +660,11 @@ The device uses 5 separate RGB LEDs for visual air quality feedback:
 ```
 LED Purpose    GPIO    Connection
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-CO2 LED        21      Data line
+CO2 LED        1       Data line
 VOC LED        4       Data line
-NOx LED        8       Data line
+NOx LED        15      Data line
 PM2.5 LED      5       Data line
-Humidity LED   10      Data line
+Humidity LED   9       Data line
 
 For each LED:
   Data → GPIO pin (see table above)

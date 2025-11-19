@@ -70,9 +70,9 @@ typedef struct {
  *   - Wait 30 seconds after wake from sleep for stable readings (fan stabilization)
  * 
  * ESP32-C6 Connections:
- *   GPIO 18 (UART TX) → PMSA003-A Pin 7 (RXD) - for commands (optional)
- *   GPIO 20 (UART RX) ← PMSA003-A Pin 9 (TXD) - for data (required)
- *   GPIO 19 → PMSA003-A Pin 10 (SET) - for sleep/wake control (recommended)
+ *   GPIO 4 (UART TX) → PMSA003-A Pin 7 (RXD) - for commands (optional)
+ *   GPIO 5 (UART RX) ← PMSA003-A Pin 9 (TXD) - for data (required)
+ *   GPIO 14 → PMSA003-A Pin 10 (SET) - for sleep/wake control (recommended)
  *   GPIO 2 → PMSA003-A Pin 5 (RESET) - for hardware reset (optional)
  *   5V → Pin 1-2, GND → Pin 3-4
  * 
@@ -82,8 +82,8 @@ typedef struct {
  *   - Polling every 5 minutes: ~28.5 mA average (71.5 mA savings)
  */
 #define PMSA003A_UART_NUM       UART_NUM_1
-#define PMSA003A_UART_TX_PIN    18   // GPIO18 → PMSA003A Pin 7 (RXD) for sending commands
-#define PMSA003A_UART_RX_PIN    20   // GPIO20 ← PMSA003A Pin 9 (TXD) for receiving data
+#define PMSA003A_UART_TX_PIN    4    // GPIO4 → PMSA003A Pin 7 (RXD) for sending commands
+#define PMSA003A_UART_RX_PIN    5    // GPIO5 ← PMSA003A Pin 9 (TXD) for receiving data
 #define PMSA003A_UART_BAUD      9600
 #define PMSA003A_UART_BUF_SIZE  512
 

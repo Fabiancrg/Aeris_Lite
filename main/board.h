@@ -13,7 +13,7 @@
 #endif
 
 #ifndef LED_VOC_GPIO
-#define LED_VOC_GPIO GPIO_NUM_4   /* VOC Index indicator */
+#define LED_VOC_GPIO GPIO_NUM_18  /* VOC Index indicator */
 #endif
 
 #ifndef LED_NOX_GPIO
@@ -21,7 +21,7 @@
 #endif
 
 #ifndef LED_PM25_GPIO
-#define LED_PM25_GPIO GPIO_NUM_5  /* PM2.5 level indicator */
+#define LED_PM25_GPIO GPIO_NUM_20 /* PM2.5 level indicator */
 #endif
 
 #ifndef LED_HUM_GPIO
@@ -36,7 +36,7 @@
 
 /* PMSA003A PM sensor control pins */
 #ifndef PMSA003A_SET_GPIO
-#define PMSA003A_SET_GPIO GPIO_NUM_19  /* Sleep/Wake control (HIGH=active, LOW=sleep) */
+#define PMSA003A_SET_GPIO GPIO_NUM_14  /* Sleep/Wake control (HIGH=active, LOW=sleep) */
 #endif
 
 #ifndef PMSA003A_RESET_GPIO

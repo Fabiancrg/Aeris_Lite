@@ -117,9 +117,9 @@ The device includes **5 separate RGB LEDs (SK6812)** that provide real-time visu
 
 ### LED Indicators
 - **CO2 LED** (GPIO1): Shows carbon dioxide level status
-- **VOC LED** (GPIO4): Shows volatile organic compounds status
+- **VOC LED** (GPIO18): Shows volatile organic compounds status
 - **NOx LED** (GPIO15): Shows nitrogen oxides status
-- **PM2.5 LED** (GPIO5): Shows particulate matter status
+- **PM2.5 LED** (GPIO20): Shows particulate matter status
 - **Humidity LED** (GPIO9): Shows humidity level status
 
 ### Color Coding
@@ -602,16 +602,16 @@ Pin 10: SET                → Sleep/Wake (TTL 3.3V)→ GPIO 19 (for power manag
    - Firmware must account for this delay in polling mode
 
 **Recommended Configuration for Power Management:**
-- **Pin 10 (SET)** → **GPIO 19** - for sleep/wake control
+- **Pin 10 (SET)** → **GPIO 14** - for sleep/wake control
 - **Pin 5 (RESET)** → **GPIO 2** - optional, for hardware reset
-- **Pin 7 (RXD)** → GPIO 18 (ESP UART TX) - for sending commands
-- **Pin 9 (TXD)** → GPIO 20 (ESP UART RX) - for receiving data
+- **Pin 7 (RXD)** → GPIO 4 (ESP UART TX) - for sending commands
+- **Pin 9 (TXD)** → GPIO 5 (ESP UART RX) - for receiving data
 
 **Simple Configuration (continuous operation):**
 - **Pin 10 (SET)** → Leave floating (sensor always on)
 - **Pin 5 (RESET)** → Leave floating (normal operation)
 - **Pin 7 (RXD)** → Not connected (no commands sent)
-- **Pin 9 (TXD)** → GPIO 20 (ESP UART RX) - for receiving data
+- **Pin 9 (TXD)** → GPIO 5 (ESP UART RX) - for receiving data
 
 **Note:** GPIO assignments can be changed in `main/board.h` if needed.
 - GPIO 18 can be connected for active command mode
@@ -661,9 +661,9 @@ The device uses 5 separate RGB LEDs for visual air quality feedback:
 LED Purpose    GPIO    Connection
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 CO2 LED        1       Data line
-VOC LED        4       Data line
+VOC LED        18      Data line
 NOx LED        15      Data line
-PM2.5 LED      5       Data line
+PM2.5 LED      20      Data line
 Humidity LED   9       Data line
 
 For each LED:

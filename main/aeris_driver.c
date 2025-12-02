@@ -12,7 +12,7 @@
 #include "string.h"
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
-#include "driver/i2c.h"
+#include "driver/i2c_master.h"
 #include "driver/uart.h"
 #include "driver/gpio.h"
 
@@ -25,7 +25,7 @@ static const char *TAG = "AERIS_DRIVER";
 
 /* SHT45 timing constants (in ms) */
 #define SHT45_MEASURE_TIME_MS   10    // Measurement duration for high precision
-#define SHT45_RESET_TIME_MS     1     // Time after soft reset
+#define SHT45_RESET_TIME_MS     10    // Time after soft reset (datasheet says 1ms max, but add margin)
 
 /* LPS22HB Register Addresses */
 #define LPS22HB_WHO_AM_I        0x0F  // Device identification (should return 0xB1)
@@ -142,6 +142,13 @@ static TickType_t sgp41_last_measure_time = 0;
 static bool scd40_initialized = false;
 static uint64_t scd40_serial_number = 0;
 
+/* I2C master bus and device handles (new driver) */
+static i2c_master_bus_handle_t i2c_bus_handle = NULL;
+static i2c_master_dev_handle_t sht45_dev_handle = NULL;
+static i2c_master_dev_handle_t lps22hb_dev_handle = NULL;
+static i2c_master_dev_handle_t sgp41_dev_handle = NULL;
+static i2c_master_dev_handle_t scd40_dev_handle = NULL;
+
 /**
  * @brief Calculate CRC8 for SHT45 and SGP41 (polynomial 0x31, init 0xFF)
  */
@@ -168,10 +175,14 @@ static esp_err_t sht45_init(void)
 {
     ESP_LOGI(TAG, "Initializing SHT45 temperature/humidity sensor...");
     
+    if (!sht45_dev_handle) {
+        ESP_LOGE(TAG, "SHT45 device handle not initialized");
+        return ESP_ERR_INVALID_STATE;
+    }
+    
     // Send soft reset command
     uint8_t reset_cmd = SHT45_CMD_SOFT_RESET;
-    esp_err_t ret = i2c_master_write_to_device(AERIS_I2C_NUM, SHT45_I2C_ADDR,
-                                                &reset_cmd, 1, pdMS_TO_TICKS(1000));
+    esp_err_t ret = i2c_master_transmit(sht45_dev_handle, &reset_cmd, 1, pdMS_TO_TICKS(1000));
     if (ret != ESP_OK) {
         ESP_LOGE(TAG, "SHT45 soft reset failed: %s", esp_err_to_name(ret));
         return ret;
@@ -182,19 +193,17 @@ static esp_err_t sht45_init(void)
     
     // Read serial number to verify communication
     uint8_t serial_cmd = SHT45_CMD_READ_SERIAL;
-    ret = i2c_master_write_to_device(AERIS_I2C_NUM, SHT45_I2C_ADDR,
-                                     &serial_cmd, 1, pdMS_TO_TICKS(1000));
+    ret = i2c_master_transmit(sht45_dev_handle, &serial_cmd, 1, pdMS_TO_TICKS(1000));
     if (ret != ESP_OK) {
         ESP_LOGE(TAG, "SHT45 read serial command failed: %s", esp_err_to_name(ret));
         return ret;
     }
     
-    vTaskDelay(pdMS_TO_TICKS(1));
+    vTaskDelay(pdMS_TO_TICKS(10));  // Wait for serial number to be ready
     
     // Read 6 bytes (2 bytes serial + CRC, 2 bytes serial + CRC)
     uint8_t serial_data[6];
-    ret = i2c_master_read_from_device(AERIS_I2C_NUM, SHT45_I2C_ADDR,
-                                      serial_data, 6, pdMS_TO_TICKS(1000));
+    ret = i2c_master_receive(sht45_dev_handle, serial_data, 6, pdMS_TO_TICKS(1000));
     if (ret != ESP_OK) {
         ESP_LOGE(TAG, "SHT45 read serial data failed: %s", esp_err_to_name(ret));
         return ret;
@@ -225,15 +234,14 @@ static esp_err_t sht45_init(void)
  */
 static esp_err_t sht45_read_temp_humidity(float *temp_c, float *humidity_percent)
 {
-    if (!sht45_initialized) {
+    if (!sht45_initialized || !sht45_dev_handle) {
         ESP_LOGE(TAG, "SHT45 not initialized");
         return ESP_ERR_INVALID_STATE;
     }
     
     // Send measurement command (high repeatability)
     uint8_t measure_cmd = SHT45_CMD_MEASURE_HIGH;
-    esp_err_t ret = i2c_master_write_to_device(AERIS_I2C_NUM, SHT45_I2C_ADDR,
-                                                &measure_cmd, 1, pdMS_TO_TICKS(1000));
+    esp_err_t ret = i2c_master_transmit(sht45_dev_handle, &measure_cmd, 1, pdMS_TO_TICKS(1000));
     if (ret != ESP_OK) {
         ESP_LOGE(TAG, "SHT45 measure command failed: %s", esp_err_to_name(ret));
         return ret;
@@ -244,8 +252,7 @@ static esp_err_t sht45_read_temp_humidity(float *temp_c, float *humidity_percent
     
     // Read 6 bytes (2 temp + CRC, 2 RH + CRC)
     uint8_t data[6];
-    ret = i2c_master_read_from_device(AERIS_I2C_NUM, SHT45_I2C_ADDR,
-                                      data, 6, pdMS_TO_TICKS(1000));
+    ret = i2c_master_receive(sht45_dev_handle, data, 6, pdMS_TO_TICKS(1000));
     if (ret != ESP_OK) {
         ESP_LOGE(TAG, "SHT45 read measurement failed: %s", esp_err_to_name(ret));
         return ret;
@@ -279,13 +286,16 @@ static esp_err_t sht45_read_temp_humidity(float *temp_c, float *humidity_percent
  */
 static esp_err_t scd40_send_command(uint16_t cmd, uint8_t *response, size_t response_len, uint32_t delay_ms)
 {
+    if (!scd40_dev_handle) {
+        return ESP_ERR_INVALID_STATE;
+    }
+    
     uint8_t cmd_buf[2];
     cmd_buf[0] = cmd >> 8;
     cmd_buf[1] = cmd & 0xFF;
     
     // Send command
-    esp_err_t ret = i2c_master_write_to_device(AERIS_I2C_NUM, SCD40_I2C_ADDR,
-                                                cmd_buf, 2, pdMS_TO_TICKS(1000));
+    esp_err_t ret = i2c_master_transmit(scd40_dev_handle, cmd_buf, 2, pdMS_TO_TICKS(1000));
     if (ret != ESP_OK) {
         ESP_LOGE(TAG, "SCD40 send command 0x%04X failed: %s", cmd, esp_err_to_name(ret));
         return ret;
@@ -298,8 +308,7 @@ static esp_err_t scd40_send_command(uint16_t cmd, uint8_t *response, size_t resp
     
     // Read response if expected
     if (response && response_len > 0) {
-        ret = i2c_master_read_from_device(AERIS_I2C_NUM, SCD40_I2C_ADDR,
-                                          response, response_len, pdMS_TO_TICKS(1000));
+        ret = i2c_master_receive(scd40_dev_handle, response, response_len, pdMS_TO_TICKS(1000));
         if (ret != ESP_OK) {
             ESP_LOGE(TAG, "SCD40 read response failed: %s", esp_err_to_name(ret));
             return ret;
@@ -439,8 +448,11 @@ static esp_err_t scd40_set_ambient_pressure(uint16_t pressure_hpa)
     cmd_buf[3] = pressure_hpa & 0xFF;
     cmd_buf[4] = sensirion_crc8(&cmd_buf[2], 2);
     
-    esp_err_t ret = i2c_master_write_to_device(AERIS_I2C_NUM, SCD40_I2C_ADDR,
-                                                cmd_buf, 5, pdMS_TO_TICKS(1000));
+    if (!scd40_dev_handle) {
+        return ESP_ERR_INVALID_STATE;
+    }
+    
+    esp_err_t ret = i2c_master_transmit(scd40_dev_handle, cmd_buf, 5, pdMS_TO_TICKS(1000));
     if (ret != ESP_OK) {
         ESP_LOGE(TAG, "SCD40 set ambient pressure failed: %s", esp_err_to_name(ret));
         return ret;
@@ -464,33 +476,33 @@ static uint8_t sgp41_crc8(const uint8_t *data, size_t len)
 static esp_err_t sgp41_send_command(uint16_t cmd, const uint8_t *params, size_t param_len,
                                      uint8_t *response, size_t response_len, uint32_t delay_ms)
 {
-    uint8_t cmd_buf[2];
-    cmd_buf[0] = cmd >> 8;
-    cmd_buf[1] = cmd & 0xFF;
+    if (!sgp41_dev_handle) {
+        return ESP_ERR_INVALID_STATE;
+    }
     
-    // Send command
-    esp_err_t ret = i2c_master_write_to_device(AERIS_I2C_NUM, SGP41_I2C_ADDR,
-                                                cmd_buf, 2, pdMS_TO_TICKS(1000));
+    // Build complete command buffer with parameters and CRCs
+    // Max size: 2 (cmd) + 6 * 3 (6 params with CRCs) = 20 bytes
+    uint8_t full_cmd[20];
+    size_t full_cmd_len = 0;
+    
+    // Add command bytes
+    full_cmd[full_cmd_len++] = cmd >> 8;
+    full_cmd[full_cmd_len++] = cmd & 0xFF;
+    
+    // Add parameters with CRCs (each parameter is 2 bytes + 1 CRC)
+    if (params && param_len > 0) {
+        for (size_t i = 0; i < param_len; i += 2) {
+            full_cmd[full_cmd_len++] = params[i];
+            full_cmd[full_cmd_len++] = params[i + 1];
+            full_cmd[full_cmd_len++] = sgp41_crc8(&params[i], 2);
+        }
+    }
+    
+    // Send complete command with all parameters
+    esp_err_t ret = i2c_master_transmit(sgp41_dev_handle, full_cmd, full_cmd_len, pdMS_TO_TICKS(1000));
     if (ret != ESP_OK) {
         ESP_LOGE(TAG, "SGP41 send command 0x%04X failed: %s", cmd, esp_err_to_name(ret));
         return ret;
-    }
-    
-    // Send parameters if any (each parameter is 2 bytes + 1 CRC)
-    if (params && param_len > 0) {
-        for (size_t i = 0; i < param_len; i += 2) {
-            uint8_t param_with_crc[3];
-            param_with_crc[0] = params[i];
-            param_with_crc[1] = params[i + 1];
-            param_with_crc[2] = sgp41_crc8(&params[i], 2);
-            
-            ret = i2c_master_write_to_device(AERIS_I2C_NUM, SGP41_I2C_ADDR,
-                                            param_with_crc, 3, pdMS_TO_TICKS(1000));
-            if (ret != ESP_OK) {
-                ESP_LOGE(TAG, "SGP41 send param failed: %s", esp_err_to_name(ret));
-                return ret;
-            }
-        }
     }
     
     // Wait for measurement
@@ -500,8 +512,7 @@ static esp_err_t sgp41_send_command(uint16_t cmd, const uint8_t *params, size_t 
     
     // Read response if expected
     if (response && response_len > 0) {
-        ret = i2c_master_read_from_device(AERIS_I2C_NUM, SGP41_I2C_ADDR,
-                                          response, response_len, pdMS_TO_TICKS(1000));
+        ret = i2c_master_receive(sgp41_dev_handle, response, response_len, pdMS_TO_TICKS(1000));
         if (ret != ESP_OK) {
             ESP_LOGE(TAG, "SGP41 read response failed: %s", esp_err_to_name(ret));
             return ret;
@@ -615,10 +626,13 @@ static esp_err_t sgp41_measure_raw_signals(uint16_t *voc_raw, uint16_t *nox_raw,
  */
 static esp_err_t lps22hb_write_reg(uint8_t reg, uint8_t value)
 {
+    if (!lps22hb_dev_handle) {
+        return ESP_ERR_INVALID_STATE;
+    }
+    
     uint8_t write_buf[2] = {reg, value};
-    esp_err_t ret = i2c_master_write_to_device(AERIS_I2C_NUM, LPS22HB_I2C_ADDR,
-                                                write_buf, sizeof(write_buf),
-                                                pdMS_TO_TICKS(1000));
+    esp_err_t ret = i2c_master_transmit(lps22hb_dev_handle, write_buf, sizeof(write_buf),
+                                        pdMS_TO_TICKS(1000));
     if (ret != ESP_OK) {
         ESP_LOGE(TAG, "LPS22HB write reg 0x%02X failed: %s", reg, esp_err_to_name(ret));
     }
@@ -630,9 +644,12 @@ static esp_err_t lps22hb_write_reg(uint8_t reg, uint8_t value)
  */
 static esp_err_t lps22hb_read_reg(uint8_t reg, uint8_t *data, size_t len)
 {
-    esp_err_t ret = i2c_master_write_read_device(AERIS_I2C_NUM, LPS22HB_I2C_ADDR,
-                                                  &reg, 1, data, len,
-                                                  pdMS_TO_TICKS(1000));
+    if (!lps22hb_dev_handle) {
+        return ESP_ERR_INVALID_STATE;
+    }
+    
+    esp_err_t ret = i2c_master_transmit_receive(lps22hb_dev_handle, &reg, 1, data, len,
+                                                 pdMS_TO_TICKS(1000));
     if (ret != ESP_OK) {
         ESP_LOGE(TAG, "LPS22HB read reg 0x%02X failed: %s", reg, esp_err_to_name(ret));
     }
@@ -1039,33 +1056,97 @@ static void pmsa003a_task(void *arg)
 }
 
 /**
- * @brief Initialize I2C bus for sensors
+ * @brief Initialize I2C bus for sensors (new i2c_master driver)
  */
 static esp_err_t i2c_master_init(void)
 {
-    i2c_config_t conf = {
-        .mode = I2C_MODE_MASTER,
-        .sda_io_num = AERIS_I2C_SDA_PIN,
+    /* Configure I2C bus */
+    i2c_master_bus_config_t bus_config = {
+        .clk_source = I2C_CLK_SRC_DEFAULT,
+        .i2c_port = I2C_NUM_0,
         .scl_io_num = AERIS_I2C_SCL_PIN,
-        .sda_pullup_en = GPIO_PULLUP_ENABLE,
-        .scl_pullup_en = GPIO_PULLUP_ENABLE,
-        .master.clk_speed = AERIS_I2C_FREQ_HZ,
+        .sda_io_num = AERIS_I2C_SDA_PIN,
+        .glitch_ignore_cnt = 7,
+        .flags.enable_internal_pullup = true,
     };
     
-    esp_err_t err = i2c_param_config(AERIS_I2C_NUM, &conf);
+    esp_err_t err = i2c_new_master_bus(&bus_config, &i2c_bus_handle);
     if (err != ESP_OK) {
-        ESP_LOGE(TAG, "I2C param config failed: %s", esp_err_to_name(err));
+        ESP_LOGE(TAG, "I2C bus creation failed: %s", esp_err_to_name(err));
         return err;
     }
     
-    err = i2c_driver_install(AERIS_I2C_NUM, conf.mode, 0, 0, 0);
+    /* Add SHT45 device */
+    i2c_device_config_t sht45_cfg = {
+        .dev_addr_length = I2C_ADDR_BIT_LEN_7,
+        .device_address = SHT45_I2C_ADDR,
+        .scl_speed_hz = AERIS_I2C_FREQ_HZ,
+    };
+    err = i2c_master_bus_add_device(i2c_bus_handle, &sht45_cfg, &sht45_dev_handle);
     if (err != ESP_OK) {
-        ESP_LOGE(TAG, "I2C driver install failed: %s", esp_err_to_name(err));
-        return err;
+        ESP_LOGW(TAG, "Failed to add SHT45 device: %s", esp_err_to_name(err));
     }
     
-    ESP_LOGI(TAG, "I2C master initialized on SDA=%d, SCL=%d", 
+    /* Add LPS22HB device */
+    i2c_device_config_t lps22hb_cfg = {
+        .dev_addr_length = I2C_ADDR_BIT_LEN_7,
+        .device_address = LPS22HB_I2C_ADDR,
+        .scl_speed_hz = AERIS_I2C_FREQ_HZ,
+    };
+    err = i2c_master_bus_add_device(i2c_bus_handle, &lps22hb_cfg, &lps22hb_dev_handle);
+    if (err != ESP_OK) {
+        ESP_LOGW(TAG, "Failed to add LPS22HB device: %s", esp_err_to_name(err));
+    }
+    
+    /* Add SGP41 device */
+    i2c_device_config_t sgp41_cfg = {
+        .dev_addr_length = I2C_ADDR_BIT_LEN_7,
+        .device_address = SGP41_I2C_ADDR,
+        .scl_speed_hz = AERIS_I2C_FREQ_HZ,
+    };
+    err = i2c_master_bus_add_device(i2c_bus_handle, &sgp41_cfg, &sgp41_dev_handle);
+    if (err != ESP_OK) {
+        ESP_LOGW(TAG, "Failed to add SGP41 device: %s", esp_err_to_name(err));
+    }
+    
+    /* Add SCD40 device */
+    i2c_device_config_t scd40_cfg = {
+        .dev_addr_length = I2C_ADDR_BIT_LEN_7,
+        .device_address = SCD40_I2C_ADDR,
+        .scl_speed_hz = AERIS_I2C_FREQ_HZ,
+    };
+    err = i2c_master_bus_add_device(i2c_bus_handle, &scd40_cfg, &scd40_dev_handle);
+    if (err != ESP_OK) {
+        ESP_LOGW(TAG, "Failed to add SCD40 device: %s", esp_err_to_name(err));
+    }
+    
+    ESP_LOGI(TAG, "I2C master bus initialized on SDA=%d, SCL=%d", 
              AERIS_I2C_SDA_PIN, AERIS_I2C_SCL_PIN);
+    
+    /* Probe known I2C addresses to see which devices are present */
+    ESP_LOGI(TAG, "Probing I2C devices...");
+    
+    const struct {
+        uint8_t addr;
+        const char *name;
+    } devices[] = {
+        {SHT45_I2C_ADDR, "SHT45"},
+        {LPS22HB_I2C_ADDR, "LPS22HB"},
+        {SGP41_I2C_ADDR, "SGP41"},
+        {SCD40_I2C_ADDR, "SCD40"},
+        {0x5C, "LPS22HB (alt)"},  // LPS22HB alternate address (SA0=LOW)
+        {0x45, "SHT45 (alt)"},    // Some SHT4x variants
+    };
+    
+    for (size_t i = 0; i < sizeof(devices)/sizeof(devices[0]); i++) {
+        esp_err_t probe_ret = i2c_master_probe(i2c_bus_handle, devices[i].addr, pdMS_TO_TICKS(100));
+        if (probe_ret == ESP_OK) {
+            ESP_LOGI(TAG, "  [OK] %s found at 0x%02X", devices[i].name, devices[i].addr);
+        } else {
+            ESP_LOGD(TAG, "  [--] %s not found at 0x%02X", devices[i].name, devices[i].addr);
+        }
+    }
+    
     return ESP_OK;
 }
 

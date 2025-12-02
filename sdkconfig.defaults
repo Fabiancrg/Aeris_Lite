@@ -50,3 +50,9 @@ CONFIG_BOOTLOADER_APP_ROLLBACK_ENABLE=y
 # CONFIG_ZB_DEFAULT_TX_POWER=8
 
 # end of Component config
+
+#
+# HTTP Server (WebSocket support for WiFi logging)
+#
+CONFIG_HTTPD_WS_SUPPORT=y
+# end of HTTP Server

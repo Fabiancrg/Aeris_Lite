@@ -61,9 +61,10 @@ static led_thresholds_t s_thresholds = {
     .pm25_red = 55,
 };
 
-/* RMT channel handles - one per LED */
-static rmt_channel_handle_t s_led_channels[LED_ID_MAX] = {NULL};
+/* RMT channel handle - SINGLE shared channel for all LEDs */
+static rmt_channel_handle_t s_rmt_channel = NULL;
 static rmt_encoder_handle_t s_led_encoder = NULL;
+static gpio_num_t s_current_gpio = GPIO_NUM_NC;  // Currently configured GPIO
 
 /* LED state tracking */
 static led_color_t s_current_colors[LED_ID_MAX] = {
@@ -216,43 +217,57 @@ err:
 
 esp_err_t led_indicator_init(void)
 {
-    ESP_LOGI(TAG, "Initializing 4 RGB LEDs (CO2, VOC, PM2.5, Humidity)");
+    ESP_LOGI(TAG, "Initializing RGB LED driver (shared RMT channel for 6 LEDs)");
     
-    // Create shared LED strip encoder (can be reused for all channels)
-    ESP_ERROR_CHECK(rmt_new_led_strip_encoder(&s_led_encoder));
-    
-    // Initialize each LED channel
-    for (int i = 0; i < LED_ID_MAX; i++) {
-        ESP_LOGI(TAG, "Initializing %s LED on GPIO%d", LED_NAMES[i], LED_GPIO_MAP[i]);
-        
-        rmt_tx_channel_config_t tx_chan_config = {
-            .clk_src = RMT_CLK_SRC_DEFAULT,
-            .gpio_num = LED_GPIO_MAP[i],
-            .mem_block_symbols = 64,
-            .resolution_hz = RMT_LED_STRIP_RESOLUTION_HZ,
-            .trans_queue_depth = 4,
-        };
-        
-        esp_err_t ret = rmt_new_tx_channel(&tx_chan_config, &s_led_channels[i]);
-        if (ret != ESP_OK) {
-            ESP_LOGE(TAG, "Failed to create RMT channel for %s LED: %s", 
-                     LED_NAMES[i], esp_err_to_name(ret));
-            return ret;
-        }
-        
-        // Enable RMT channel
-        ret = rmt_enable(s_led_channels[i]);
-        if (ret != ESP_OK) {
-            ESP_LOGE(TAG, "Failed to enable RMT channel for %s LED: %s", 
-                     LED_NAMES[i], esp_err_to_name(ret));
-            return ret;
-        }
-        
-        // Initialize to OFF
-        led_set_color(i, LED_COLOR_OFF);
+    // Create shared LED strip encoder
+    esp_err_t ret = rmt_new_led_strip_encoder(&s_led_encoder);
+    if (ret != ESP_OK) {
+        ESP_LOGE(TAG, "Failed to create LED strip encoder: %s", esp_err_to_name(ret));
+        return ret;
     }
     
-    ESP_LOGI(TAG, "All 4 RGB LEDs initialized successfully");
+    // Configure all LED GPIOs as outputs and set them LOW initially
+    for (int i = 0; i < LED_ID_MAX; i++) {
+        gpio_config_t io_conf = {
+            .pin_bit_mask = (1ULL << LED_GPIO_MAP[i]),
+            .mode = GPIO_MODE_OUTPUT,
+            .pull_up_en = GPIO_PULLUP_DISABLE,
+            .pull_down_en = GPIO_PULLDOWN_DISABLE,
+            .intr_type = GPIO_INTR_DISABLE,
+        };
+        gpio_config(&io_conf);
+        gpio_set_level(LED_GPIO_MAP[i], 0);  // Start with LED off
+        ESP_LOGI(TAG, "Configured %s LED on GPIO%d", LED_NAMES[i], LED_GPIO_MAP[i]);
+    }
+    
+    // Create RMT channel on first LED's GPIO (will be reconfigured as needed)
+    s_current_gpio = LED_GPIO_MAP[0];
+    rmt_tx_channel_config_t tx_chan_config = {
+        .clk_src = RMT_CLK_SRC_DEFAULT,
+        .gpio_num = s_current_gpio,
+        .mem_block_symbols = 64,
+        .resolution_hz = RMT_LED_STRIP_RESOLUTION_HZ,
+        .trans_queue_depth = 4,
+    };
+    
+    ret = rmt_new_tx_channel(&tx_chan_config, &s_rmt_channel);
+    if (ret != ESP_OK) {
+        ESP_LOGE(TAG, "Failed to create RMT channel: %s", esp_err_to_name(ret));
+        return ret;
+    }
+    
+    ret = rmt_enable(s_rmt_channel);
+    if (ret != ESP_OK) {
+        ESP_LOGE(TAG, "Failed to enable RMT channel: %s", esp_err_to_name(ret));
+        return ret;
+    }
+    
+    // Initialize all LEDs to OFF
+    for (int i = 0; i < LED_ID_MAX; i++) {
+        s_current_colors[i] = LED_COLOR_OFF;
+    }
+    
+    ESP_LOGI(TAG, "RGB LED driver initialized (shared RMT channel)");
     return ESP_OK;
 }
 
@@ -287,14 +302,49 @@ esp_err_t led_set_color(led_id_t led_id, led_color_t color)
         return ESP_ERR_INVALID_ARG;
     }
     
-    if (!s_led_channels[led_id]) {
-        ESP_LOGW(TAG, "%s LED not initialized", LED_NAMES[led_id]);
+    if (!s_rmt_channel) {
+        ESP_LOGW(TAG, "LED driver not initialized");
         return ESP_ERR_INVALID_STATE;
     }
     
     // If disabled, always turn off
     if (!s_thresholds.enabled && color != LED_COLOR_OFF) {
         color = LED_COLOR_OFF;
+    }
+    
+    gpio_num_t target_gpio = LED_GPIO_MAP[led_id];
+    
+    // If we need to switch to a different GPIO, reconfigure RMT
+    if (s_current_gpio != target_gpio) {
+        // Disable RMT on current GPIO
+        rmt_disable(s_rmt_channel);
+        
+        // Delete and recreate channel on new GPIO
+        rmt_del_channel(s_rmt_channel);
+        
+        rmt_tx_channel_config_t tx_chan_config = {
+            .clk_src = RMT_CLK_SRC_DEFAULT,
+            .gpio_num = target_gpio,
+            .mem_block_symbols = 64,
+            .resolution_hz = RMT_LED_STRIP_RESOLUTION_HZ,
+            .trans_queue_depth = 4,
+        };
+        
+        esp_err_t ret = rmt_new_tx_channel(&tx_chan_config, &s_rmt_channel);
+        if (ret != ESP_OK) {
+            ESP_LOGE(TAG, "Failed to reconfigure RMT for %s LED: %s", 
+                     LED_NAMES[led_id], esp_err_to_name(ret));
+            return ret;
+        }
+        
+        ret = rmt_enable(s_rmt_channel);
+        if (ret != ESP_OK) {
+            ESP_LOGE(TAG, "Failed to enable RMT for %s LED: %s", 
+                     LED_NAMES[led_id], esp_err_to_name(ret));
+            return ret;
+        }
+        
+        s_current_gpio = target_gpio;
     }
     
     rgb_t rgb = COLOR_MAP[color];
@@ -304,10 +354,10 @@ esp_err_t led_set_color(led_id_t led_id, led_color_t color)
         .loop_count = 0,
     };
     
-    esp_err_t ret = rmt_transmit(s_led_channels[led_id], s_led_encoder, led_data, sizeof(led_data), &tx_config);
+    esp_err_t ret = rmt_transmit(s_rmt_channel, s_led_encoder, led_data, sizeof(led_data), &tx_config);
     if (ret == ESP_OK) {
         // Wait with timeout to prevent indefinite blocking
-        ret = rmt_tx_wait_all_done(s_led_channels[led_id], pdMS_TO_TICKS(100));
+        ret = rmt_tx_wait_all_done(s_rmt_channel, pdMS_TO_TICKS(100));
         if (ret == ESP_OK) {
             s_current_colors[led_id] = color;
         } else {

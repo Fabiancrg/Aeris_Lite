@@ -18,8 +18,10 @@
 #include "esp_zb_ota.h"
 #include "esp_zigbee_trace.h"
 #include "sdkconfig.h"
+#include "wifi_log.h"
 #include "esp_ota_ops.h"
 #include "esp_system.h"
+#include "esp_event.h"
 #include "freertos/timers.h"
 #include "led_indicator.h"
 
@@ -232,6 +234,7 @@ static esp_err_t deferred_driver_init(void)
     
     vTaskDelay(pdMS_TO_TICKS(10));
     
+#if !DISABLE_LEDS
     /* Initialize RGB LED indicator */
     ESP_LOGI(TAG, "[INIT] Initializing RGB LED indicator...");
     esp_err_t led_ret = led_indicator_init();
@@ -241,6 +244,9 @@ static esp_err_t deferred_driver_init(void)
     } else {
         ESP_LOGI(TAG, "[OK] LED indicator initialized");
     }
+#else
+    ESP_LOGW(TAG, "[SKIP] LED indicator disabled via DISABLE_LEDS flag");
+#endif
     
     /* Initialize air quality sensor driver */
     ESP_LOGI(TAG, "[INIT] Initializing air quality sensors...");
@@ -814,18 +820,12 @@ static void esp_zb_task(void *pvParameters)
     static char led_config_desc[17] = "\x0D""LED Thresholds";
     esp_zb_analog_output_cluster_add_attr(led_config_cluster, ESP_ZB_ZCL_ATTR_ANALOG_OUTPUT_DESCRIPTION_ID, led_config_desc);
     
-    /* Add other standard Analog Output attributes that coordinators expect */
-    static float min_present_value = 0.0f;
-    static float max_present_value = 65535.0f;
-    static float resolution = 1.0f;
-    static bool out_of_service = false;
+    /* NOTE: esp_zb_analog_output_cluster_create() already adds these standard attributes:
+     * - present_value, out_of_service, status_flags (mandatory)
+     * - min_present_value, max_present_value, resolution (optional but included)
+     * Do NOT add them again to avoid duplicate attribute errors */
     
-    esp_zb_analog_output_cluster_add_attr(led_config_cluster, ESP_ZB_ZCL_ATTR_ANALOG_OUTPUT_MIN_PRESENT_VALUE_ID, &min_present_value);
-    esp_zb_analog_output_cluster_add_attr(led_config_cluster, ESP_ZB_ZCL_ATTR_ANALOG_OUTPUT_MAX_PRESENT_VALUE_ID, &max_present_value);
-    esp_zb_analog_output_cluster_add_attr(led_config_cluster, ESP_ZB_ZCL_ATTR_ANALOG_OUTPUT_RESOLUTION_ID, &resolution);
-    esp_zb_analog_output_cluster_add_attr(led_config_cluster, ESP_ZB_ZCL_ATTR_ANALOG_OUTPUT_OUT_OF_SERVICE_ID, &out_of_service);
-    
-    /* Add threshold attributes (all uint16_t) */
+    /* Add threshold attributes (all uint16_t) - use generic esp_zb_cluster_add_attr for custom attributes */
     uint16_t voc_orange_default = 150;
     uint16_t voc_red_default = 250;
     uint16_t nox_orange_default = 150;
@@ -841,20 +841,49 @@ static void esp_zb_task(void *pvParameters)
     uint8_t led_mask_default = 0x1F;  // All 5 LEDs enabled by default (bits 0-4)
     uint32_t pm_poll_interval_default = 300;  // 5 minutes default polling interval
     
-    esp_zb_analog_output_cluster_add_attr(led_config_cluster, ZCL_LED_ATTR_VOC_ORANGE, &voc_orange_default);
-    esp_zb_analog_output_cluster_add_attr(led_config_cluster, ZCL_LED_ATTR_VOC_RED, &voc_red_default);
-    esp_zb_analog_output_cluster_add_attr(led_config_cluster, ZCL_LED_ATTR_NOX_ORANGE, &nox_orange_default);
-    esp_zb_analog_output_cluster_add_attr(led_config_cluster, ZCL_LED_ATTR_NOX_RED, &nox_red_default);
-    esp_zb_analog_output_cluster_add_attr(led_config_cluster, ZCL_LED_ATTR_CO2_ORANGE, &co2_orange_default);
-    esp_zb_analog_output_cluster_add_attr(led_config_cluster, ZCL_LED_ATTR_CO2_RED, &co2_red_default);
-    esp_zb_analog_output_cluster_add_attr(led_config_cluster, ZCL_LED_ATTR_HUM_ORANGE_LOW, &hum_orange_low_default);
-    esp_zb_analog_output_cluster_add_attr(led_config_cluster, ZCL_LED_ATTR_HUM_ORANGE_HIGH, &hum_orange_high_default);
-    esp_zb_analog_output_cluster_add_attr(led_config_cluster, ZCL_LED_ATTR_HUM_RED_LOW, &hum_red_low_default);
-    esp_zb_analog_output_cluster_add_attr(led_config_cluster, ZCL_LED_ATTR_HUM_RED_HIGH, &hum_red_high_default);
-    esp_zb_analog_output_cluster_add_attr(led_config_cluster, ZCL_LED_ATTR_PM25_ORANGE, &pm25_orange_default);
-    esp_zb_analog_output_cluster_add_attr(led_config_cluster, ZCL_LED_ATTR_PM25_RED, &pm25_red_default);
-    esp_zb_analog_output_cluster_add_attr(led_config_cluster, ZCL_LED_ATTR_ENABLE_MASK, &led_mask_default);
-    esp_zb_analog_output_cluster_add_attr(led_config_cluster, ZCL_LED_ATTR_PM_POLL_INTERVAL, &pm_poll_interval_default);
+    /* Custom manufacturer-specific attributes (0xF000-0xFFFF range) must use generic add_attr */
+    esp_zb_cluster_add_attr(led_config_cluster, ESP_ZB_ZCL_CLUSTER_ID_ANALOG_OUTPUT,
+                            ZCL_LED_ATTR_VOC_ORANGE, ESP_ZB_ZCL_ATTR_TYPE_U16,
+                            ESP_ZB_ZCL_ATTR_ACCESS_READ_WRITE, &voc_orange_default);
+    esp_zb_cluster_add_attr(led_config_cluster, ESP_ZB_ZCL_CLUSTER_ID_ANALOG_OUTPUT,
+                            ZCL_LED_ATTR_VOC_RED, ESP_ZB_ZCL_ATTR_TYPE_U16,
+                            ESP_ZB_ZCL_ATTR_ACCESS_READ_WRITE, &voc_red_default);
+    esp_zb_cluster_add_attr(led_config_cluster, ESP_ZB_ZCL_CLUSTER_ID_ANALOG_OUTPUT,
+                            ZCL_LED_ATTR_NOX_ORANGE, ESP_ZB_ZCL_ATTR_TYPE_U16,
+                            ESP_ZB_ZCL_ATTR_ACCESS_READ_WRITE, &nox_orange_default);
+    esp_zb_cluster_add_attr(led_config_cluster, ESP_ZB_ZCL_CLUSTER_ID_ANALOG_OUTPUT,
+                            ZCL_LED_ATTR_NOX_RED, ESP_ZB_ZCL_ATTR_TYPE_U16,
+                            ESP_ZB_ZCL_ATTR_ACCESS_READ_WRITE, &nox_red_default);
+    esp_zb_cluster_add_attr(led_config_cluster, ESP_ZB_ZCL_CLUSTER_ID_ANALOG_OUTPUT,
+                            ZCL_LED_ATTR_CO2_ORANGE, ESP_ZB_ZCL_ATTR_TYPE_U16,
+                            ESP_ZB_ZCL_ATTR_ACCESS_READ_WRITE, &co2_orange_default);
+    esp_zb_cluster_add_attr(led_config_cluster, ESP_ZB_ZCL_CLUSTER_ID_ANALOG_OUTPUT,
+                            ZCL_LED_ATTR_CO2_RED, ESP_ZB_ZCL_ATTR_TYPE_U16,
+                            ESP_ZB_ZCL_ATTR_ACCESS_READ_WRITE, &co2_red_default);
+    esp_zb_cluster_add_attr(led_config_cluster, ESP_ZB_ZCL_CLUSTER_ID_ANALOG_OUTPUT,
+                            ZCL_LED_ATTR_HUM_ORANGE_LOW, ESP_ZB_ZCL_ATTR_TYPE_U16,
+                            ESP_ZB_ZCL_ATTR_ACCESS_READ_WRITE, &hum_orange_low_default);
+    esp_zb_cluster_add_attr(led_config_cluster, ESP_ZB_ZCL_CLUSTER_ID_ANALOG_OUTPUT,
+                            ZCL_LED_ATTR_HUM_ORANGE_HIGH, ESP_ZB_ZCL_ATTR_TYPE_U16,
+                            ESP_ZB_ZCL_ATTR_ACCESS_READ_WRITE, &hum_orange_high_default);
+    esp_zb_cluster_add_attr(led_config_cluster, ESP_ZB_ZCL_CLUSTER_ID_ANALOG_OUTPUT,
+                            ZCL_LED_ATTR_HUM_RED_LOW, ESP_ZB_ZCL_ATTR_TYPE_U16,
+                            ESP_ZB_ZCL_ATTR_ACCESS_READ_WRITE, &hum_red_low_default);
+    esp_zb_cluster_add_attr(led_config_cluster, ESP_ZB_ZCL_CLUSTER_ID_ANALOG_OUTPUT,
+                            ZCL_LED_ATTR_HUM_RED_HIGH, ESP_ZB_ZCL_ATTR_TYPE_U16,
+                            ESP_ZB_ZCL_ATTR_ACCESS_READ_WRITE, &hum_red_high_default);
+    esp_zb_cluster_add_attr(led_config_cluster, ESP_ZB_ZCL_CLUSTER_ID_ANALOG_OUTPUT,
+                            ZCL_LED_ATTR_PM25_ORANGE, ESP_ZB_ZCL_ATTR_TYPE_U16,
+                            ESP_ZB_ZCL_ATTR_ACCESS_READ_WRITE, &pm25_orange_default);
+    esp_zb_cluster_add_attr(led_config_cluster, ESP_ZB_ZCL_CLUSTER_ID_ANALOG_OUTPUT,
+                            ZCL_LED_ATTR_PM25_RED, ESP_ZB_ZCL_ATTR_TYPE_U16,
+                            ESP_ZB_ZCL_ATTR_ACCESS_READ_WRITE, &pm25_red_default);
+    esp_zb_cluster_add_attr(led_config_cluster, ESP_ZB_ZCL_CLUSTER_ID_ANALOG_OUTPUT,
+                            ZCL_LED_ATTR_ENABLE_MASK, ESP_ZB_ZCL_ATTR_TYPE_U8,
+                            ESP_ZB_ZCL_ATTR_ACCESS_READ_WRITE, &led_mask_default);
+    esp_zb_cluster_add_attr(led_config_cluster, ESP_ZB_ZCL_CLUSTER_ID_ANALOG_OUTPUT,
+                            ZCL_LED_ATTR_PM_POLL_INTERVAL, ESP_ZB_ZCL_ATTR_TYPE_U32,
+                            ESP_ZB_ZCL_ATTR_ACCESS_READ_WRITE, &pm_poll_interval_default);
     
     ESP_ERROR_CHECK(esp_zb_cluster_list_add_analog_output_cluster(led_clusters, led_config_cluster, ESP_ZB_ZCL_CLUSTER_SERVER_ROLE));
     ESP_ERROR_CHECK(esp_zb_cluster_list_add_identify_cluster(led_clusters, esp_zb_identify_cluster_create(NULL), ESP_ZB_ZCL_CLUSTER_SERVER_ROLE));
@@ -910,6 +939,11 @@ void app_main(void)
     };
     
     ESP_ERROR_CHECK(nvs_flash_init());
+    
+    /* Initialize WiFi logging for remote debugging (if enabled) */
+    ESP_ERROR_CHECK(esp_event_loop_create_default());
+    wifi_log_init();  /* Non-blocking, continues even if WiFi fails */
+    
     ESP_ERROR_CHECK(esp_zb_platform_config(&config));
     
     /* OTA validation */

@@ -423,11 +423,21 @@
       "different_unit_net": "error",
       "duplicate_reference": "error",
       "duplicate_sheet_names": "error",
+      "endpoint_off_grid": "warning",
       "extra_units": "error",
+      "footprint_filter": "ignore",
+      "footprint_link_issues": "warning",
+      "four_way_junction": "ignore",
       "global_label_dangling": "warning",
       "hier_label_mismatch": "error",
       "label_dangling": "error",
+      "label_multiple_wires": "warning",
       "lib_symbol_issues": "warning",
+      "lib_symbol_mismatch": "warning",
+      "missing_bidi_pin": "warning",
+      "missing_input_pin": "warning",
+      "missing_power_pin": "error",
+      "missing_unit": "warning",
       "multiple_net_names": "warning",
       "net_not_bus_member": "warning",
       "no_connect_connected": "warning",
@@ -436,8 +446,15 @@
       "pin_not_driven": "error",
       "pin_to_pin": "warning",
       "power_pin_not_driven": "error",
+      "same_local_global_label": "warning",
+      "similar_label_and_power": "warning",
       "similar_labels": "warning",
+      "similar_power": "warning",
+      "simulation_model_issue": "ignore",
+      "single_global_label": "ignore",
       "unannotated": "error",
+      "unconnected_wire_endpoint": "warning",
+      "undefined_netclass": "error",
       "unit_value_mismatch": "error",
       "unresolved_variable": "error",
       "wire_dangling": "error"
@@ -449,12 +466,12 @@
   },
   "meta": {
     "filename": "aeris.kicad_pro",
-    "version": 1
+    "version": 3
   },
   "net_settings": {
     "classes": [
       {
-        "bus_width": 12.0,
+        "bus_width": 12,
         "clearance": 0.2,
         "diff_pair_gap": 0.25,
         "diff_pair_via_gap": 0.25,
@@ -464,14 +481,15 @@
         "microvia_drill": 0.1,
         "name": "Default",
         "pcb_color": "rgba(0, 0, 0, 0.000)",
+        "priority": 2147483647,
         "schematic_color": "rgba(0, 0, 0, 0.000)",
         "track_width": 0.2,
         "via_diameter": 0.6,
         "via_drill": 0.3,
-        "wire_width": 6.0
+        "wire_width": 6
       },
       {
-        "bus_width": 12.0,
+        "bus_width": 12,
         "clearance": 0.2,
         "diff_pair_gap": 0.25,
         "diff_pair_via_gap": 0.25,
@@ -480,16 +498,16 @@
         "microvia_diameter": 0.6,
         "microvia_drill": 0.25,
         "name": "I2C",
-        "nets": [],
         "pcb_color": "rgba(0, 0, 0, 0.000)",
+        "priority": 0,
         "schematic_color": "rgba(0, 0, 0, 0.000)",
         "track_width": 0.25,
         "via_diameter": 0.6,
         "via_drill": 0.3,
-        "wire_width": 6.0
+        "wire_width": 6
       },
       {
-        "bus_width": 12.0,
+        "bus_width": 12,
         "clearance": 0.2,
         "diff_pair_gap": 0.25,
         "diff_pair_via_gap": 0.25,
@@ -498,16 +516,16 @@
         "microvia_diameter": 0.6,
         "microvia_drill": 0.25,
         "name": "LED_DIN",
-        "nets": [],
         "pcb_color": "rgba(0, 0, 0, 0.000)",
+        "priority": 1,
         "schematic_color": "rgba(0, 0, 0, 0.000)",
         "track_width": 0.3,
         "via_diameter": 0.6,
         "via_drill": 0.3,
-        "wire_width": 6.0
+        "wire_width": 6
       },
       {
-        "bus_width": 12.0,
+        "bus_width": 12,
         "clearance": 0.25,
         "diff_pair_gap": 0.25,
         "diff_pair_via_gap": 0.25,
@@ -516,16 +534,16 @@
         "microvia_diameter": 0.7,
         "microvia_drill": 0.3,
         "name": "PWR_3V3",
-        "nets": [],
         "pcb_color": "rgba(0, 0, 0, 0.000)",
+        "priority": 2,
         "schematic_color": "rgba(0, 0, 0, 0.000)",
         "track_width": 0.8,
         "via_diameter": 0.7,
         "via_drill": 0.3,
-        "wire_width": 6.0
+        "wire_width": 6
       },
       {
-        "bus_width": 12.0,
+        "bus_width": 12,
         "clearance": 0.3,
         "diff_pair_gap": 0.25,
         "diff_pair_via_gap": 0.25,
@@ -534,16 +552,16 @@
         "microvia_diameter": 0.8,
         "microvia_drill": 0.4,
         "name": "PWR_5V",
-        "nets": [],
         "pcb_color": "rgba(0, 0, 0, 0.000)",
+        "priority": 3,
         "schematic_color": "rgba(0, 0, 0, 0.000)",
         "track_width": 1.5,
         "via_diameter": 0.8,
         "via_drill": 0.4,
-        "wire_width": 6.0
+        "wire_width": 6
       },
       {
-        "bus_width": 12.0,
+        "bus_width": 12,
         "clearance": 0.4,
         "diff_pair_gap": 0.25,
         "diff_pair_via_gap": 0.25,
@@ -552,16 +570,16 @@
         "microvia_diameter": 0.8,
         "microvia_drill": 0.4,
         "name": "PWR_5V_HIGH",
-        "nets": [],
         "pcb_color": "rgba(0, 0, 0, 0.000)",
+        "priority": 4,
         "schematic_color": "rgba(0, 0, 0, 0.000)",
         "track_width": 1.5,
         "via_diameter": 0.8,
         "via_drill": 0.4,
-        "wire_width": 6.0
+        "wire_width": 6
       },
       {
-        "bus_width": 12.0,
+        "bus_width": 12,
         "clearance": 0.2,
         "diff_pair_gap": 0.25,
         "diff_pair_via_gap": 0.25,
@@ -570,98 +588,21 @@
         "microvia_diameter": 0.6,
         "microvia_drill": 0.25,
         "name": "UART",
-        "nets": [],
         "pcb_color": "rgba(0, 0, 0, 0.000)",
+        "priority": 5,
         "schematic_color": "rgba(0, 0, 0, 0.000)",
         "track_width": 0.3,
         "via_diameter": 0.6,
         "via_drill": 0.3,
-        "wire_width": 6.0
+        "wire_width": 6
       }
     ],
     "meta": {
-      "version": 2
+      "version": 4
     },
     "net_colors": null,
     "netclass_assignments": null,
-    "netclass_patterns": [
-      {
-        "netclass": "PWR_5V",
-        "pattern": "+5V"
-      },
-      {
-        "netclass": "PWR_3V3",
-        "pattern": "+3V3"
-      },
-      {
-        "netclass": "I2C",
-        "pattern": "SDA"
-      },
-      {
-        "netclass": "I2C",
-        "pattern": "SCL"
-      },
-      {
-        "netclass": "UART",
-        "pattern": "TX"
-      },
-      {
-        "netclass": "UART",
-        "pattern": "RX"
-      },
-      {
-        "netclass": "LED_DIN",
-        "pattern": "GPIO1"
-      },
-      {
-        "netclass": "LED_DIN",
-        "pattern": "GPIO4"
-      },
-      {
-        "netclass": "LED_DIN",
-        "pattern": "GPIO9"
-      },
-      {
-        "netclass": "LED_DIN",
-        "pattern": "GPIO5"
-      },
-      {
-        "netclass": "LED_DIN",
-        "pattern": "GPIO15"
-      },
-      {
-        "netclass": "LED_DIN",
-        "pattern": "VOC"
-      },
-      {
-        "netclass": "LED_DIN",
-        "pattern": "CO2"
-      },
-      {
-        "netclass": "LED_DIN",
-        "pattern": "RH"
-      },
-      {
-        "netclass": "LED_DIN",
-        "pattern": "PM25"
-      },
-      {
-        "netclass": "LED_DIN",
-        "pattern": "NOx"
-      },
-      {
-        "netclass": "PWR_5V_HIGH",
-        "pattern": "Net-(J6-Pin_1)"
-      },
-      {
-        "netclass": "PWR_5V_HIGH",
-        "pattern": "Net-(D0-A2)"
-      },
-      {
-        "netclass": "Default",
-        "pattern": ""
-      }
-    ]
+    "netclass_patterns": []
   },
   "pcbnew": {
     "last_paths": {

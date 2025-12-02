@@ -113,6 +113,7 @@ static void status_led_stop_blink(void)
     }
 }
 
+#if !DISABLE_BOOT_BUTTON
 /* Boot button queue and ISR handler */
 static QueueHandle_t button_evt_queue = NULL;
 
@@ -220,19 +221,23 @@ static esp_err_t button_init(void)
     ESP_LOGI(TAG, "[OK] Boot button initialization complete");
     return ESP_OK;
 }
+#endif /* !DISABLE_BOOT_BUTTON */
 
 static esp_err_t deferred_driver_init(void)
 {
     ESP_LOGI(TAG, "[INIT] Starting deferred driver initialization...");
     
+#if !DISABLE_BOOT_BUTTON
     /* Initialize boot button for factory reset */
     esp_err_t button_ret = button_init();
     if (button_ret != ESP_OK) {
         ESP_LOGE(TAG, "[ERROR] Button initialization failed");
         return button_ret;
     }
-    
     vTaskDelay(pdMS_TO_TICKS(10));
+#else
+    ESP_LOGW(TAG, "[SKIP] Boot button disabled via DISABLE_BOOT_BUTTON flag");
+#endif
     
 #if !DISABLE_LEDS
     /* Initialize RGB LED indicator */

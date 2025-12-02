@@ -6,15 +6,16 @@
 #include "driver/gpio.h"
 
 /* Debug/Development flags */
-#define DISABLE_LEDS 1  /* Set to 1 to disable all LED functionality */
+#define DISABLE_LEDS 0  /* Set to 1 to disable all LED functionality */
+#define DISABLE_BOOT_BUTTON 1  /* Set to 1 to disable boot button factory reset */
 
 /* WiFi Logging Configuration (for debugging while using external power)
  * Enable this to broadcast logs over UDP while Zigbee runs.
  * Listen with: nc -u -l 5000
  */
-#define WIFI_LOG_ENABLE  1                    /* Set to 1 to enable WiFi logging */
-#define WIFI_LOG_SSID    "IoT24"     /* Your WiFi network name */
-#define WIFI_LOG_PASS    "S0lut10n24" /* Your WiFi password */
+#define WIFI_LOG_ENABLE  0                    /* Set to 1 to enable WiFi logging */
+#define WIFI_LOG_SSID    "HomeParents"     /* Your WiFi network name */
+#define WIFI_LOG_PASS    "S0lut10nPaMa" /* Your WiFi password */
 
 /* RGB LED configuration (SK6812) - 5 separate LEDs for air quality indicators
  * Optimized for ESP32-C6 Supermini available GPIOs

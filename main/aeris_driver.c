@@ -54,6 +54,7 @@ static const char *TAG = "AERIS_DRIVER";
 #define SGP41_MEASURE_TIME_MS           50
 #define SGP41_SELFTEST_TIME_MS          320
 #define SGP41_STARTUP_TIME_MS           170  // Time after power-on
+#define SGP41_MIN_SAMPLING_INTERVAL_MS  1000 // Minimum 1Hz sampling rate (datasheet requirement)
 
 /* SCD40 Commands */
 #define SCD40_CMD_START_PERIODIC_MEASUREMENT    0x21B1  // Start periodic measurement
@@ -281,12 +282,14 @@ static esp_err_t sht45_read_temp_humidity(float *temp_c, float *humidity_percent
     uint16_t rh_raw = (data[3] << 8) | data[4];
     
     // SHT45 conversion formulas from datasheet
+    // Temperature: T = -45 + 175 * (S_T / 65535)
     float raw_temp = -45.0f + 175.0f * ((float)temp_raw / 65535.0f);
     
     // Apply temperature offset compensation for self-heating
     *temp_c = raw_temp - temperature_offset_c;
     
-    // Apply humidity offset compensation
+    // Humidity: RH = -6 + 125 * (S_RH / 65535)
+    // Note: -6 offset is from SHT45 datasheet (different from SHT40's 0 offset)
     float raw_humidity = -6.0f + 125.0f * ((float)rh_raw / 65535.0f);
     *humidity_percent = raw_humidity - humidity_offset_percent;
     
@@ -378,6 +381,28 @@ static esp_err_t scd40_init(void)
                           serial_data[7];
     
     ESP_LOGI(TAG, "SCD40 serial number: 0x%012llX", scd40_serial_number);
+    
+    // Disable automatic self-calibration (ASC) for stable baseline
+    // ASC can cause drift in controlled environments with stable CO2 levels
+    uint8_t asc_params[3];
+    asc_params[0] = 0x00;  // Disable ASC (MSB)
+    asc_params[1] = 0x00;  // Disable ASC (LSB)
+    asc_params[2] = sensirion_crc8(asc_params, 2);
+    
+    uint8_t asc_cmd_buf[5];
+    asc_cmd_buf[0] = SCD40_CMD_SET_AUTOMATIC_SELF_CALIB >> 8;
+    asc_cmd_buf[1] = SCD40_CMD_SET_AUTOMATIC_SELF_CALIB & 0xFF;
+    asc_cmd_buf[2] = asc_params[0];
+    asc_cmd_buf[3] = asc_params[1];
+    asc_cmd_buf[4] = asc_params[2];
+    
+    ret = i2c_master_transmit(scd40_dev_handle, asc_cmd_buf, 5, pdMS_TO_TICKS(1000));
+    if (ret != ESP_OK) {
+        ESP_LOGW(TAG, "SCD40 disable ASC failed (continuing anyway): %s", esp_err_to_name(ret));
+    } else {
+        ESP_LOGI(TAG, "SCD40 ASC disabled for stable baseline");
+    }
+    vTaskDelay(pdMS_TO_TICKS(1));  // Brief delay after ASC command
     
     // Start periodic measurement
     ret = scd40_send_command(SCD40_CMD_START_PERIODIC_MEASUREMENT, NULL, 0, 0);
@@ -610,6 +635,15 @@ static esp_err_t sgp41_measure_raw_signals(uint16_t *voc_raw, uint16_t *nox_raw,
         return ESP_ERR_INVALID_STATE;
     }
     
+    // Enforce minimum 1Hz sampling interval (datasheet requirement)
+    TickType_t now = xTaskGetTickCount();
+    TickType_t elapsed_ms = pdTICKS_TO_MS(now - sgp41_last_measure_time);
+    if (sgp41_last_measure_time != 0 && elapsed_ms < SGP41_MIN_SAMPLING_INTERVAL_MS) {
+        uint32_t wait_ms = SGP41_MIN_SAMPLING_INTERVAL_MS - elapsed_ms;
+        ESP_LOGD(TAG, "SGP41: Enforcing 1Hz interval, waiting %lu ms", wait_ms);
+        vTaskDelay(pdMS_TO_TICKS(wait_ms));
+    }
+    
     // Convert RH and temperature to SGP41 format (RH% * 65535 / 100, Temp°C * 65535 / 175)
     uint16_t rh_ticks = (uint16_t)((rh_percent * 65535.0f) / 100.0f);
     uint16_t temp_ticks = (uint16_t)(((temp_c + 45.0f) * 65535.0f) / 175.0f);
@@ -701,13 +735,15 @@ static esp_err_t lps22hb_init(void)
     vTaskDelay(pdMS_TO_TICKS(10));
     
     // Configure sensor
-    // CTRL_REG1: ODR=25Hz (0b011), Enable block data update (BDU=1)
+    // CTRL_REG1: ODR=one-shot (0b000) for power savings, Enable block data update (BDU=1)
     // ODR bits [6:4]: 000=one-shot, 001=1Hz, 010=10Hz, 011=25Hz, 100=50Hz, 101=75Hz
-    ret = lps22hb_write_reg(LPS22HB_CTRL_REG1, 0x3A);  // 0b00111010 = 25Hz, BDU=1, LPF enabled
+    // Using one-shot mode: sensor only measures when triggered via CTRL_REG2
+    // This saves significant power when sensor refresh interval is > 1 second
+    ret = lps22hb_write_reg(LPS22HB_CTRL_REG1, 0x0A);  // 0b00001010 = one-shot, BDU=1, LPF enabled
     if (ret != ESP_OK) return ret;
     
     lps22hb_initialized = true;
-    ESP_LOGI(TAG, "LPS22HB initialized successfully (25 Hz, BDU enabled)");
+    ESP_LOGI(TAG, "LPS22HB initialized successfully (one-shot mode, BDU enabled)");
     
     return ESP_OK;
 }
@@ -721,9 +757,19 @@ static esp_err_t lps22hb_read_data(float *pressure_hpa, float *temperature_c)
         return ESP_ERR_INVALID_STATE;
     }
     
+    // Trigger one-shot measurement by setting ONE_SHOT bit in CTRL_REG2
+    esp_err_t ret = lps22hb_write_reg(LPS22HB_CTRL_REG2, 0x01);
+    if (ret != ESP_OK) {
+        ESP_LOGE(TAG, "LPS22HB trigger one-shot failed: %s", esp_err_to_name(ret));
+        return ret;
+    }
+    
+    // Wait for measurement to complete (~10ms typical)
+    vTaskDelay(pdMS_TO_TICKS(15));
+    
     // Check if new data is available
     uint8_t status;
-    esp_err_t ret = lps22hb_read_reg(LPS22HB_STATUS_REG, &status, 1);
+    ret = lps22hb_read_reg(LPS22HB_STATUS_REG, &status, 1);
     if (ret != ESP_OK) return ret;
     
     // Read pressure (24-bit value)

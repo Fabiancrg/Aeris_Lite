@@ -4260,6 +4260,10 @@
 		(uuid "03d2e9f0-eaef-4b00-bd19-4c8dd89f0616")
 	)
 	(no_connect
+		(at 39.37 77.47)
+		(uuid "0f1a79c9-1657-456d-8d10-6effebee97cb")
+	)
+	(no_connect
 		(at 224.79 133.35)
 		(uuid "1cff5107-eb6d-4f70-b5ac-9a3bfea7f70f")
 	)
@@ -4322,10 +4326,6 @@
 	(no_connect
 		(at 69.85 44.45)
 		(uuid "c87ac884-8b83-4489-a457-547055b48e82")
-	)
-	(no_connect
-		(at 39.37 74.93)
-		(uuid "d3c754dd-c978-4219-a406-d4d88f280339")
 	)
 	(no_connect
 		(at 72.39 63.5)
@@ -4580,6 +4580,16 @@
 			(type default)
 		)
 		(uuid "17e456f8-c395-4986-895a-724fa1b9edfc")
+	)
+	(wire
+		(pts
+			(xy 219.71 120.65) (xy 224.79 120.65)
+		)
+		(stroke
+			(width 0)
+			(type default)
+		)
+		(uuid "19b12d8c-6dfb-44b8-aace-5167e4bf45d3")
 	)
 	(wire
 		(pts
@@ -5483,16 +5493,6 @@
 	)
 	(wire
 		(pts
-			(xy 219.71 120.65) (xy 224.79 120.65)
-		)
-		(stroke
-			(width 0)
-			(type default)
-		)
-		(uuid "973536af-eab1-4c9d-bb7b-95f9aa4b9963")
-	)
-	(wire
-		(pts
 			(xy 176.53 99.06) (xy 179.07 99.06)
 		)
 		(stroke
@@ -5743,6 +5743,16 @@
 	)
 	(wire
 		(pts
+			(xy 36.83 74.93) (xy 39.37 74.93)
+		)
+		(stroke
+			(width 0)
+			(type default)
+		)
+		(uuid "b3fdd18a-3f85-4d0c-a847-f1997cc5cfc2")
+	)
+	(wire
+		(pts
 			(xy 237.49 148.59) (xy 237.49 149.86)
 		)
 		(stroke
@@ -5820,16 +5830,6 @@
 			(type default)
 		)
 		(uuid "c1d931b9-7b5c-4f77-845e-93c33179f105")
-	)
-	(wire
-		(pts
-			(xy 36.83 77.47) (xy 39.37 77.47)
-		)
-		(stroke
-			(width 0)
-			(type default)
-		)
-		(uuid "c1f5c8a6-8c5b-467b-ba99-b5eed973e954")
 	)
 	(wire
 		(pts
@@ -6463,9 +6463,9 @@
 			)
 		)
 	)
-	(global_label "GPIO9"
+	(global_label "GPIO14"
 		(shape input)
-		(at 36.83 77.47 180)
+		(at 36.83 74.93 180)
 		(fields_autoplaced yes)
 		(effects
 			(font
@@ -6475,7 +6475,29 @@
 		)
 		(uuid "34edb44d-fc49-4f7f-b2dd-64ea80038df9")
 		(property "Intersheetrefs" "${INTERSHEET_REFS}"
-			(at 28.16 77.47 0)
+			(at 26.9505 74.93 0)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+				(justify right)
+				(hide yes)
+			)
+		)
+	)
+	(global_label "GPIO14"
+		(shape input)
+		(at 219.71 120.65 180)
+		(fields_autoplaced yes)
+		(effects
+			(font
+				(size 1.27 1.27)
+			)
+			(justify right)
+		)
+		(uuid "357e6625-b587-4d9e-bed0-836bd4293e02")
+		(property "Intersheetrefs" "${INTERSHEET_REFS}"
+			(at 209.8305 120.65 0)
 			(effects
 				(font
 					(size 1.27 1.27)
@@ -7070,28 +7092,6 @@
 		(uuid "aebde56b-89dd-47e6-903e-e02bb3748ac9")
 		(property "Intersheetrefs" "${INTERSHEET_REFS}"
 			(at 209.8305 118.11 0)
-			(effects
-				(font
-					(size 1.27 1.27)
-				)
-				(justify right)
-				(hide yes)
-			)
-		)
-	)
-	(global_label "GPIO9"
-		(shape input)
-		(at 219.71 120.65 180)
-		(fields_autoplaced yes)
-		(effects
-			(font
-				(size 1.27 1.27)
-			)
-			(justify right)
-		)
-		(uuid "af62339d-3bcb-43c2-8f8f-0bf4310d0635")
-		(property "Intersheetrefs" "${INTERSHEET_REFS}"
-			(at 211.04 120.65 0)
 			(effects
 				(font
 					(size 1.27 1.27)
@@ -9323,7 +9323,7 @@
 				)
 			)
 		)
-		(property "Footprint" "LED_SMD:LED_SK6812MINI_PLCC4_3.5x3.5mm_P1.75mm"
+		(property "Footprint" "esp32-h2-supermini:LED_SK6812MINI_PLCC4_3.5x3.5mm_P1.75mm"
 			(at 243.84 36.83 0)
 			(effects
 				(font
@@ -9597,7 +9597,7 @@
 				)
 			)
 		)
-		(property "Footprint" "LED_SMD:LED_SK6812MINI_PLCC4_3.5x3.5mm_P1.75mm"
+		(property "Footprint" "esp32-h2-supermini:LED_SK6812MINI_PLCC4_3.5x3.5mm_P1.75mm"
 			(at 243.84 72.39 0)
 			(effects
 				(font
@@ -10079,7 +10079,7 @@
 				(justify left)
 			)
 		)
-		(property "Footprint" "Capacitor_SMD:C_0805_2012Metric"
+		(property "Footprint" "Capacitor_SMD:C_1206_3216Metric"
 			(at 148.8948 48.26 0)
 			(effects
 				(font
@@ -11081,7 +11081,7 @@
 				)
 			)
 		)
-		(property "Footprint" "LED_SMD:LED_SK6812MINI_PLCC4_3.5x3.5mm_P1.75mm"
+		(property "Footprint" "esp32-h2-supermini:LED_SK6812MINI_PLCC4_3.5x3.5mm_P1.75mm"
 			(at 187.96 106.68 0)
 			(effects
 				(font
@@ -11695,7 +11695,7 @@
 				)
 			)
 		)
-		(property "Footprint" "LED_SMD:LED_SK6812MINI_PLCC4_3.5x3.5mm_P1.75mm"
+		(property "Footprint" "esp32-h2-supermini:LED_SK6812MINI_PLCC4_3.5x3.5mm_P1.75mm"
 			(at 187.96 72.39 0)
 			(effects
 				(font
@@ -11770,7 +11770,7 @@
 				)
 			)
 		)
-		(property "Footprint" "LED_SMD:LED_SK6812MINI_PLCC4_3.5x3.5mm_P1.75mm"
+		(property "Footprint" "esp32-h2-supermini:LED_SK6812MINI_PLCC4_3.5x3.5mm_P1.75mm"
 			(at 187.96 36.83 0)
 			(effects
 				(font

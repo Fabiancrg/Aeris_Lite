@@ -47,15 +47,17 @@ The Zigbee air quality sensor exposes the following sensor endpoints:
 - **Humidity Range**: 0-100% RH
 - **Humidity Accuracy**: ±1.0% RH (typical, 25-75% RH)
 - **Measurement Time**: 8.2ms (high precision mode)
+- **Conversion**: Temperature: T = -45 + 175×(S/65535), Humidity: RH = -6 + 125×(S/65535)
 - **Calibration Offsets**: Custom attributes (0xF010, 0xF011) for temperature/humidity adjustment
-- **Sensor Refresh Interval**: Configurable update rate (10-3600s, default 30s) via attribute 0xF011
+- **Sensor Refresh Interval**: Configurable update rate (10-3600s, default 30s) via attribute 0xF012
 
 ### Endpoint 2: Pressure Sensor
 - **Pressure Measurement Cluster (0x0403)**: Atmospheric pressure in hPa
 - **Sensor**: STMicroelectronics LPS22HB (I2C)
-- **Update Rate**: 25 Hz (configurable)
+- **Update Rate**: On-demand (one-shot mode for power savings)
 - **Range**: 260-1260 hPa
 - **Accuracy**: ±0.025 hPa (typical)
+- **Measurement Time**: ~15ms per reading
 
 ### Endpoint 3: PM1.0 Sensor
 - **Analog Input Cluster (0x000C)**: PM1.0 concentration (µg/m³)
@@ -78,16 +80,16 @@ The Zigbee air quality sensor exposes the following sensor endpoints:
 - **Sensor**: Sensirion SGP41 (I2C)
 - **Description**: Volatile Organic Compounds air quality index
 - **Raw signals**: VOC raw values available
-- **Update Rate**: 1 second recommended
-- **Note**: Requires temperature/humidity compensation
+- **Update Rate**: 1 Hz enforced (minimum 1-second interval per datasheet)
+- **Note**: Requires temperature/humidity compensation from SHT45
 
 ### Endpoint 7: NOx Index Sensor
 - **Analog Input Cluster (0x000C)**: NOx Index (1-500)
 - **Sensor**: Sensirion SGP41 (I2C)
 - **Description**: Nitrogen Oxides air quality index
 - **Raw signals**: NOx raw values available
-- **Update Rate**: 1 second recommended
-- **Note**: Requires temperature/humidity compensation
+- **Update Rate**: 1 Hz enforced (minimum 1-second interval per datasheet)
+- **Note**: Requires temperature/humidity compensation from SHT45
 
 ### Endpoint 8: CO2 Sensor
 - **CO2 Concentration Cluster (0x040D)**: Carbon dioxide in ppm
@@ -96,6 +98,7 @@ The Zigbee air quality sensor exposes the following sensor endpoints:
 - **Accuracy**: ±(40 ppm + 5% of reading)
 - **Update Rate**: 5 seconds (automatic periodic measurement)
 - **Pressure Compensation**: Automatic compensation using LPS22HB pressure data
+- **Calibration**: Automatic self-calibration (ASC) disabled for stable baseline in controlled environments
 - **Additional**: Built-in temperature and humidity sensor (bonus)
 
 ### Endpoint 9: LED Configuration

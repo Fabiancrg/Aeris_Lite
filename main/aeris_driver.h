@@ -222,6 +222,21 @@ void aeris_set_temperature_offset(float offset_c);
  */
 float aeris_get_temperature_offset(void);
 
+/**
+ * @brief Set humidity offset compensation
+ * 
+ * @param offset_percent Humidity offset in percent RH (typically 0 to 5)
+ *                       Positive value = sensor reads high, will be subtracted
+ */
+void aeris_set_humidity_offset(float offset_percent);
+
+/**
+ * @brief Get current humidity offset compensation value
+ * 
+ * @return Humidity offset in percent RH
+ */
+float aeris_get_humidity_offset(void);
+
 #ifdef __cplusplus
 }
 #endif

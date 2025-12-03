@@ -41,6 +41,9 @@
 #define ZCL_LED_ATTR_PM25_RED           0xF00B
 #define ZCL_LED_ATTR_ENABLE_MASK        0xF00C  // Bitmask for individual LED control
 #define ZCL_LED_ATTR_PM_POLL_INTERVAL   0xF00D  // PM sensor polling interval in seconds (0=continuous)
+#define ZCL_LED_ATTR_BRIGHTNESS         0xF00E  // LED brightness level (0-255)
+#define ZCL_ATTR_TEMP_OFFSET            0xF00F  // Temperature offset in 0.1°C (signed int16, e.g., 30 = 3.0°C)
+#define ZCL_ATTR_HUMIDITY_OFFSET        0xF010  // Humidity offset in 0.1% (signed int16, e.g., 10 = 1.0%)
 
 #define ESP_ZB_PRIMARY_CHANNEL_MASK     ESP_ZB_TRANSCEIVER_ALL_CHANNELS_MASK /* Zigbee primary channel mask use in the example */
 

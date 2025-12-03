@@ -133,7 +133,12 @@ static uint32_t sht45_serial_number = 0;
 /* Temperature offset compensation for self-heating (in °C)
  * Positive value = sensor reads higher than actual, so we subtract
  * Typical value: 2.0 to 4.0°C depending on PCB layout and airflow */
-static float temperature_offset_c = 3.0f;  // Default 3°C offset
+static float temperature_offset_c = 0.0f;  // Default no offset (configure via Zigbee)
+
+/* Humidity offset compensation (in %RH)
+ * Positive value = sensor reads higher than actual, so we subtract
+ * Typical value: 0 to 5% depending on conditions */
+static float humidity_offset_percent = 0.0f;  // Default no offset
 
 /* LPS22HB sensor state */
 static bool lps22hb_initialized = false;
@@ -281,7 +286,9 @@ static esp_err_t sht45_read_temp_humidity(float *temp_c, float *humidity_percent
     // Apply temperature offset compensation for self-heating
     *temp_c = raw_temp - temperature_offset_c;
     
-    *humidity_percent = -6.0f + 125.0f * ((float)rh_raw / 65535.0f);
+    // Apply humidity offset compensation
+    float raw_humidity = -6.0f + 125.0f * ((float)rh_raw / 65535.0f);
+    *humidity_percent = raw_humidity - humidity_offset_percent;
     
     // Clamp humidity to valid range
     if (*humidity_percent < 0.0f) *humidity_percent = 0.0f;
@@ -1554,4 +1561,24 @@ void aeris_set_temperature_offset(float offset_c)
 float aeris_get_temperature_offset(void)
 {
     return temperature_offset_c;
+}
+
+/**
+ * @brief Set humidity offset compensation
+ * @param offset_percent Humidity offset in percent RH
+ *                       Positive value means sensor reads high, will be subtracted
+ */
+void aeris_set_humidity_offset(float offset_percent)
+{
+    humidity_offset_percent = offset_percent;
+    ESP_LOGI(TAG, "Humidity offset set to %.2f%%", offset_percent);
+}
+
+/**
+ * @brief Get current humidity offset compensation
+ * @return Humidity offset in percent RH
+ */
+float aeris_get_humidity_offset(void)
+{
+    return humidity_offset_percent;
 }

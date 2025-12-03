@@ -76,6 +76,9 @@ static led_color_t s_current_colors[LED_ID_MAX] = {
 static bool s_status_led_enabled = true;  // Status LED enabled by default
 static led_color_t s_status_color = LED_COLOR_ORANGE;  // Default: not joined
 
+/* LED brightness level (0-255, default 32 = ~12% brightness) */
+static uint8_t s_led_brightness = 32;
+
 /* RGB color values (GRB order for SK6812) */
 typedef struct {
     uint8_t g;
@@ -83,12 +86,26 @@ typedef struct {
     uint8_t b;
 } rgb_t;
 
-static const rgb_t COLOR_MAP[] = {
-    [LED_COLOR_OFF]    = {0,   0,   0},
-    [LED_COLOR_GREEN]  = {255, 0,   0},    // Bright green
-    [LED_COLOR_ORANGE] = {128, 255, 0},    // Orange (mix of red and green)
-    [LED_COLOR_RED]    = {0,   255, 0},    // Bright red
-};
+/* Get RGB values for a color, scaled by current brightness */
+static rgb_t get_color_rgb(led_color_t color)
+{
+    rgb_t rgb = {0, 0, 0};
+    switch (color) {
+        case LED_COLOR_OFF:
+            rgb.g = 0; rgb.r = 0; rgb.b = 0;
+            break;
+        case LED_COLOR_GREEN:
+            rgb.g = s_led_brightness; rgb.r = 0; rgb.b = 0;
+            break;
+        case LED_COLOR_ORANGE:
+            rgb.g = s_led_brightness / 2; rgb.r = s_led_brightness; rgb.b = 0;
+            break;
+        case LED_COLOR_RED:
+            rgb.g = 0; rgb.r = s_led_brightness; rgb.b = 0;
+            break;
+    }
+    return rgb;
+}
 
 /* RMT encoder for SK6812 */
 typedef struct {
@@ -396,7 +413,7 @@ esp_err_t led_set_color(led_id_t led_id, led_color_t color)
         ESP_LOGI(TAG, "RMT channel switched to GPIO%d", target_gpio);
     }
     
-    rgb_t rgb = COLOR_MAP[color];
+    rgb_t rgb = get_color_rgb(color);
     uint8_t led_data[3] = {rgb.g, rgb.r, rgb.b};
     
     ESP_LOGD(TAG, "Transmitting RGB: G=%d R=%d B=%d", rgb.g, rgb.r, rgb.b);
@@ -637,4 +654,30 @@ esp_err_t led_set_status_enable(bool enable)
 bool led_is_status_enabled(void)
 {
     return s_status_led_enabled;
+}
+
+/**
+ * @brief Set LED brightness level
+ * @param brightness Brightness level 0-255 (0=off, 255=max)
+ */
+void led_set_brightness(uint8_t brightness)
+{
+    s_led_brightness = brightness;
+    ESP_LOGI(TAG, "LED brightness set to %d", brightness);
+    
+    // Refresh all currently lit LEDs with new brightness
+    for (int i = 0; i < LED_ID_MAX; i++) {
+        if (s_current_colors[i] != LED_COLOR_OFF) {
+            led_set_color(i, s_current_colors[i]);
+        }
+    }
+}
+
+/**
+ * @brief Get current LED brightness level
+ * @return Brightness level 0-255
+ */
+uint8_t led_get_brightness(void)
+{
+    return s_led_brightness;
 }

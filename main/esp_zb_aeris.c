@@ -378,7 +378,7 @@ void esp_zb_app_signal_handler(esp_zb_app_signal_t *signal_struct)
         /* Quiet down frequent network maintenance signals */
         if (sig_type == ESP_ZB_NWK_SIGNAL_NO_ACTIVE_LINKS_LEFT ||      // 0x18
             sig_type == ESP_ZB_NLME_STATUS_INDICATION ||               // 0x32
-            sig_type == ESP_ZB_ZDO_SIGNAL_DEVICE_UNAVAILABLE) {        // 0x3c
+            sig_type == ESP_ZB_ZDO_DEVICE_UNAVAILABLE) {               // 0x3c
             ESP_LOGD(TAG, "[ZDO] Signal: %s (0x%x), status: %s", 
                     esp_zb_zdo_signal_to_string(sig_type), sig_type,
                     esp_err_to_name(err_status));
@@ -413,6 +413,13 @@ static esp_err_t zb_attribute_handler(const esp_zb_zcl_set_attr_value_message_t 
             led_set_enable(on_off);
             thresholds.enabled = on_off;
             led_set_thresholds(&thresholds);
+        }
+        /* Handle Level Control cluster for brightness */
+        else if (message->info.cluster == ESP_ZB_ZCL_CLUSTER_ID_LEVEL_CONTROL &&
+                 message->attribute.id == ESP_ZB_ZCL_ATTR_LEVEL_CONTROL_CURRENT_LEVEL_ID) {
+            uint8_t brightness = *(uint8_t *)message->attribute.data.value;
+            ESP_LOGI(TAG, "LED brightness: %d", brightness);
+            led_set_brightness(brightness);
         }
         /* Handle threshold attributes */
         else if (message->info.cluster == ESP_ZB_ZCL_CLUSTER_ID_ANALOG_OUTPUT) {
@@ -523,6 +530,13 @@ static esp_err_t zb_attribute_handler(const esp_zb_zcl_set_attr_value_message_t 
                         updated = false;  // Don't update thresholds
                     }
                     break;
+                case ZCL_LED_ATTR_BRIGHTNESS: {
+                    uint8_t brightness = *(uint8_t *)message->attribute.data.value;
+                    ESP_LOGI(TAG, "LED brightness: %d", brightness);
+                    led_set_brightness(brightness);
+                    updated = false;  // Don't update thresholds
+                    break;
+                }
                 default:
                     updated = false;
                     break;
@@ -530,6 +544,24 @@ static esp_err_t zb_attribute_handler(const esp_zb_zcl_set_attr_value_message_t 
             
             if (updated) {
                 led_set_thresholds(&thresholds);
+            }
+        }
+    }
+    
+    /* Handle Temperature/Humidity endpoint calibration */
+    if (message->info.dst_endpoint == HA_ESP_TEMP_HUM_ENDPOINT) {
+        if (message->info.cluster == ESP_ZB_ZCL_CLUSTER_ID_TEMP_MEASUREMENT) {
+            if (message->attribute.id == ZCL_ATTR_TEMP_OFFSET) {
+                int16_t offset_raw = *(int16_t *)message->attribute.data.value;
+                float offset_c = offset_raw / 10.0f;  // Convert from 0.1°C to °C
+                ESP_LOGI(TAG, "Temperature offset: %.1f°C", offset_c);
+                aeris_set_temperature_offset(offset_c);
+            }
+            else if (message->attribute.id == ZCL_ATTR_HUMIDITY_OFFSET) {
+                int16_t offset_raw = *(int16_t *)message->attribute.data.value;
+                float offset_percent = offset_raw / 10.0f;  // Convert from 0.1% to %
+                ESP_LOGI(TAG, "Humidity offset: %.1f%%", offset_percent);
+                aeris_set_humidity_offset(offset_percent);
             }
         }
     }
@@ -734,6 +766,17 @@ static void esp_zb_task(void *pvParameters)
                                             ESP_ZB_ZCL_ATTR_ACCESS_READ_ONLY | ESP_ZB_ZCL_ATTR_ACCESS_REPORTING, &temp_value));
     ESP_ERROR_CHECK(esp_zb_temperature_meas_cluster_add_attr(temp_cluster, ESP_ZB_ZCL_ATTR_TEMP_MEASUREMENT_MIN_VALUE_ID, &temp_min));
     ESP_ERROR_CHECK(esp_zb_temperature_meas_cluster_add_attr(temp_cluster, ESP_ZB_ZCL_ATTR_TEMP_MEASUREMENT_MAX_VALUE_ID, &temp_max));
+    
+    /* Add custom calibration offset attributes to temperature cluster */
+    static int16_t temp_offset_default = 0;   // No offset by default (configure via Zigbee)
+    static int16_t hum_offset_default = 0;    // No offset by default (configure via Zigbee)
+    ESP_ERROR_CHECK(esp_zb_cluster_add_attr(temp_cluster, ESP_ZB_ZCL_CLUSTER_ID_TEMP_MEASUREMENT,
+                                            ZCL_ATTR_TEMP_OFFSET, ESP_ZB_ZCL_ATTR_TYPE_S16,
+                                            ESP_ZB_ZCL_ATTR_ACCESS_READ_WRITE, &temp_offset_default));
+    ESP_ERROR_CHECK(esp_zb_cluster_add_attr(temp_cluster, ESP_ZB_ZCL_CLUSTER_ID_TEMP_MEASUREMENT,
+                                            ZCL_ATTR_HUMIDITY_OFFSET, ESP_ZB_ZCL_ATTR_TYPE_S16,
+                                            ESP_ZB_ZCL_ATTR_ACCESS_READ_WRITE, &hum_offset_default));
+    
     ESP_ERROR_CHECK(esp_zb_cluster_list_add_temperature_meas_cluster(temp_hum_clusters, temp_cluster, ESP_ZB_ZCL_CLUSTER_SERVER_ROLE));
     
     /* Add Humidity measurement cluster with REPORTING flag */
@@ -957,6 +1000,7 @@ static void esp_zb_task(void *pvParameters)
     uint16_t pm25_red_default = 55;
     uint8_t led_mask_default = 0x1F;  // All 5 LEDs enabled by default (bits 0-4)
     uint32_t pm_poll_interval_default = 300;  // 5 minutes default polling interval
+    uint8_t led_brightness_default = 32;  // ~12% brightness (range 0-255)
     
     /* Custom manufacturer-specific attributes (0xF000-0xFFFF range) must use generic add_attr */
     esp_zb_cluster_add_attr(led_config_cluster, ESP_ZB_ZCL_CLUSTER_ID_ANALOG_OUTPUT,
@@ -1001,9 +1045,20 @@ static void esp_zb_task(void *pvParameters)
     esp_zb_cluster_add_attr(led_config_cluster, ESP_ZB_ZCL_CLUSTER_ID_ANALOG_OUTPUT,
                             ZCL_LED_ATTR_PM_POLL_INTERVAL, ESP_ZB_ZCL_ATTR_TYPE_U32,
                             ESP_ZB_ZCL_ATTR_ACCESS_READ_WRITE, &pm_poll_interval_default);
+    esp_zb_cluster_add_attr(led_config_cluster, ESP_ZB_ZCL_CLUSTER_ID_ANALOG_OUTPUT,
+                            ZCL_LED_ATTR_BRIGHTNESS, ESP_ZB_ZCL_ATTR_TYPE_U8,
+                            ESP_ZB_ZCL_ATTR_ACCESS_READ_WRITE, &led_brightness_default);
     
     ESP_ERROR_CHECK(esp_zb_cluster_list_add_analog_output_cluster(led_clusters, led_config_cluster, ESP_ZB_ZCL_CLUSTER_SERVER_ROLE));
     ESP_ERROR_CHECK(esp_zb_cluster_list_add_identify_cluster(led_clusters, esp_zb_identify_cluster_create(NULL), ESP_ZB_ZCL_CLUSTER_SERVER_ROLE));
+    
+    /* Add Level Control cluster for LED brightness (manually create with write access) */
+    esp_zb_attribute_list_t *level_cluster = esp_zb_zcl_attr_list_create(ESP_ZB_ZCL_CLUSTER_ID_LEVEL_CONTROL);
+    uint8_t current_level = 32;  // Default brightness
+    ESP_ERROR_CHECK(esp_zb_cluster_add_attr(level_cluster, ESP_ZB_ZCL_CLUSTER_ID_LEVEL_CONTROL,
+                                            ESP_ZB_ZCL_ATTR_LEVEL_CONTROL_CURRENT_LEVEL_ID, ESP_ZB_ZCL_ATTR_TYPE_U8,
+                                            ESP_ZB_ZCL_ATTR_ACCESS_READ_WRITE | ESP_ZB_ZCL_ATTR_ACCESS_REPORTING, &current_level));
+    ESP_ERROR_CHECK(esp_zb_cluster_list_add_level_cluster(led_clusters, level_cluster, ESP_ZB_ZCL_CLUSTER_SERVER_ROLE));
     
     esp_zb_endpoint_config_t endpoint9_config = {
         .endpoint = HA_ESP_LED_CONFIG_ENDPOINT,

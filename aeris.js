@@ -26,7 +26,35 @@ export default {
                         precision: 1,
                         reporting: {min: 10, max: 3600, change: 1},
                     }
-                ), 
+                ),
+                m.numeric(
+                    {
+                        name: "temperature_offset",
+                        valueMin: -100,
+                        valueMax: 100,
+                        valueStep: 1,
+                        unit: "0.1°C",
+                        cluster: "msTemperatureMeasurement",
+                        attribute: 0xF00F,
+                        description: "Temperature calibration offset (in 0.1°C, e.g., 30 = subtract 3.0°C)",
+                        access: "ALL",
+                        endpointNames: ["1"]
+                    }
+                ),
+                m.numeric(
+                    {
+                        name: "humidity_offset",
+                        valueMin: -100,
+                        valueMax: 100,
+                        valueStep: 1,
+                        unit: "0.1%",
+                        cluster: "msTemperatureMeasurement",
+                        attribute: 0xF010,
+                        description: "Humidity calibration offset (in 0.1%, e.g., 10 = subtract 1.0%)",
+                        access: "ALL",
+                        endpointNames: ["1"]
+                    }
+                ),
                 m.pressure(
                     {
                         endpointNames: ["2"],
@@ -123,6 +151,20 @@ export default {
                         cluster:"genAnalogOutput",
                         attribute:"presentValue",
                         description:"LED enable bitmask: bit0=CO2, bit1=VOC, bit2=NOx, bit3=PM2.5, bit4=Humidity (31=all on)",
+                        access:"ALL",
+                        endpointNames:["9"]
+                    }
+                ),
+                m.numeric(
+                    {
+                        name:"led_brightness",
+                        valueMin:0,
+                        valueMax:255,
+                        valueStep:1,
+                        unit:"",
+                        cluster:"genLevelCtrl",
+                        attribute:"currentLevel",
+                        description:"LED brightness level (0=off, 32=default, 255=max)",
                         access:"ALL",
                         endpointNames:["9"]
                     }

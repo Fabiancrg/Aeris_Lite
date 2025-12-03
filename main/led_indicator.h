@@ -144,4 +144,17 @@ esp_err_t led_set_status_enable(bool enable);
  */
 bool led_is_status_enabled(void);
 
+/**
+ * @brief Set LED brightness level
+ * @param brightness Brightness level 0-255 (0=off, 255=max)
+ *                   Recommended: 8-64 for indoor use
+ */
+void led_set_brightness(uint8_t brightness);
+
+/**
+ * @brief Get current LED brightness level
+ * @return Brightness level 0-255
+ */
+uint8_t led_get_brightness(void);
+
 #endif // LED_INDICATOR_H

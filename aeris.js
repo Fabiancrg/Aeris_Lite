@@ -14,7 +14,7 @@ export default {
                         endpointNames: ["1"],
                         unit: "°C",
                         access: "STATE_GET",
-                        precision: 1,
+                        precision: 2,
                         reporting: {min: 10, max: 3600, change: 0.1},
                     }
                 ), 
@@ -51,6 +51,20 @@ export default {
                         cluster: "msTemperatureMeasurement",
                         attribute: {ID: 0xF010, type: 0x29},  // INT16S
                         description: "Humidity calibration offset (in 0.1%, e.g., 10 = subtract 1.0%)",
+                        access: "ALL",
+                        endpointNames: ["1"]
+                    }
+                ),
+                m.numeric(
+                    {
+                        name: "sensor_refresh_interval",
+                        valueMin: 10,
+                        valueMax: 3600,
+                        valueStep: 1,
+                        unit: "s",
+                        cluster: "msTemperatureMeasurement",
+                        attribute: {ID: 0xF011, type: 0x21},  // UINT16
+                        description: "Sensor refresh interval in seconds (10-3600, default 30)",
                         access: "ALL",
                         endpointNames: ["1"]
                     }
@@ -160,14 +174,28 @@ export default {
                 ),
                 m.numeric(
                     {
-                        name:"led_brightness",
+                        name:"pm_poll_interval",
                         valueMin:0,
+                        valueMax:3600,
+                        valueStep:60,
+                        unit:"s",
+                        cluster:"genAnalogOutput",
+                        attribute:{ID: 0xF00D, type: 0x23},  // UINT32
+                        description:"PM sensor polling interval (0=continuous, 60-3600 seconds, default 300)",
+                        access:"ALL",
+                        endpointNames:["9"]
+                    }
+                ),
+                m.numeric(
+                    {
+                        name:"led_brightness",
+                        valueMin:1,
                         valueMax:255,
                         valueStep:1,
                         unit:"",
                         cluster:"genLevelCtrl",
                         attribute:"currentLevel",
-                        description:"LED brightness level (0=off, 32=default, 255=max)",
+                        description:"LED brightness level (1=min, 32=default, 255=max)",
                         access:"ALL",
                         endpointNames:["9"]
                     }

@@ -44,6 +44,7 @@
 #define ZCL_LED_ATTR_BRIGHTNESS         0xF00E  // LED brightness level (0-255)
 #define ZCL_ATTR_TEMP_OFFSET            0xF00F  // Temperature offset in 0.1°C (signed int16, e.g., 30 = 3.0°C)
 #define ZCL_ATTR_HUMIDITY_OFFSET        0xF010  // Humidity offset in 0.1% (signed int16, e.g., 10 = 1.0%)
+#define ZCL_ATTR_REFRESH_INTERVAL       0xF011  // Sensor refresh interval in seconds (10-3600)
 
 #define ESP_ZB_PRIMARY_CHANNEL_MASK     ESP_ZB_TRANSCEIVER_ALL_CHANNELS_MASK /* Zigbee primary channel mask use in the example */
 

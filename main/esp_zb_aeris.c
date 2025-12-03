@@ -23,6 +23,7 @@
 #include "esp_event.h"
 #include "freertos/timers.h"
 #include "led_indicator.h"
+#include "settings.h"
 
 #if !defined ZB_ROUTER_ROLE
 #error Define ZB_ROUTER_ROLE in idf.py menuconfig to compile Router source code.
@@ -240,6 +241,18 @@ static esp_err_t deferred_driver_init(void)
         ESP_LOGW(TAG, "[WARN] Continuing without LED indicator");
     } else {
         ESP_LOGI(TAG, "[OK] LED indicator initialized");
+        
+        /* Apply saved LED settings */
+        led_set_brightness(settings_get_led_brightness());
+        led_set_enable(settings_get_sensor_leds_enabled());
+        led_set_status_enable(settings_get_status_led_enabled());
+        
+        /* Apply saved LED mask */
+        led_thresholds_t thresholds;
+        led_get_thresholds(&thresholds);
+        thresholds.led_mask = settings_get_led_mask();
+        thresholds.enabled = settings_get_sensor_leds_enabled();
+        led_set_thresholds(&thresholds);
     }
     
     /* Initialize air quality sensor driver */
@@ -251,6 +264,15 @@ static esp_err_t deferred_driver_init(void)
         ESP_LOGW(TAG, "[WARN] Continuing without sensors - endpoints will still be created");
     } else {
         ESP_LOGI(TAG, "[OK] Air quality sensors initialized successfully");
+        
+        /* Apply saved calibration offsets */
+        aeris_set_temperature_offset(settings_get_temperature_offset() / 10.0f);
+        /* Apply saved calibration offsets */
+        aeris_set_temperature_offset(settings_get_temperature_offset() / 10.0f);
+        aeris_set_humidity_offset(settings_get_humidity_offset() / 10.0f);
+        
+        /* Apply saved PM sensor polling interval */
+        aeris_set_pm_polling_interval(settings_get_pm_poll_interval());
     }
     
     ESP_LOGI(TAG, "[INIT] Deferred initialization complete");
@@ -413,13 +435,21 @@ static esp_err_t zb_attribute_handler(const esp_zb_zcl_set_attr_value_message_t 
             led_set_enable(on_off);
             thresholds.enabled = on_off;
             led_set_thresholds(&thresholds);
+            settings_set_sensor_leds_enabled(on_off);  // Persist to NVS
         }
         /* Handle Level Control cluster for brightness */
         else if (message->info.cluster == ESP_ZB_ZCL_CLUSTER_ID_LEVEL_CONTROL &&
                  message->attribute.id == ESP_ZB_ZCL_ATTR_LEVEL_CONTROL_CURRENT_LEVEL_ID) {
             uint8_t brightness = *(uint8_t *)message->attribute.data.value;
-            ESP_LOGI(TAG, "LED brightness: %d", brightness);
-            led_set_brightness(brightness);
+            // Ignore brightness=0 writes (Z2M sometimes sends 0 when enabling on/off)
+            // If user really wants to turn off LEDs, they should use the on/off switch
+            if (brightness == 0) {
+                ESP_LOGW(TAG, "Ignoring brightness=0 (use on/off switch to disable LEDs)");
+            } else {
+                ESP_LOGI(TAG, "LED brightness: %d", brightness);
+                led_set_brightness(brightness);
+                settings_set_led_brightness(brightness);  // Persist to NVS
+            }
         }
         /* Handle threshold attributes */
         else if (message->info.cluster == ESP_ZB_ZCL_CLUSTER_ID_ANALOG_OUTPUT) {
@@ -435,6 +465,7 @@ static esp_err_t zb_attribute_handler(const esp_zb_zcl_set_attr_value_message_t 
                              !!(thresholds.led_mask & (1<<0)), !!(thresholds.led_mask & (1<<1)), 
                              !!(thresholds.led_mask & (1<<2)), !!(thresholds.led_mask & (1<<3)), 
                              !!(thresholds.led_mask & (1<<4)));
+                    settings_set_led_mask(thresholds.led_mask);  // Persist to NVS
                     break;
                 }
                 case ZCL_LED_ATTR_VOC_ORANGE: {
@@ -527,6 +558,7 @@ static esp_err_t zb_attribute_handler(const esp_zb_zcl_set_attr_value_message_t 
                             ESP_LOGW(TAG, "Failed to set PM polling interval: %s", 
                                      esp_err_to_name(err));
                         }
+                        settings_set_pm_poll_interval((uint16_t)interval);  // Persist to NVS
                         updated = false;  // Don't update thresholds
                     }
                     break;
@@ -556,12 +588,19 @@ static esp_err_t zb_attribute_handler(const esp_zb_zcl_set_attr_value_message_t 
                 float offset_c = offset_raw / 10.0f;  // Convert from 0.1°C to °C
                 ESP_LOGI(TAG, "Temperature offset: %.1f°C", offset_c);
                 aeris_set_temperature_offset(offset_c);
+                settings_set_temperature_offset(offset_raw);  // Persist to NVS
             }
             else if (message->attribute.id == ZCL_ATTR_HUMIDITY_OFFSET) {
                 int16_t offset_raw = *(int16_t *)message->attribute.data.value;
                 float offset_percent = offset_raw / 10.0f;  // Convert from 0.1% to %
                 ESP_LOGI(TAG, "Humidity offset: %.1f%%", offset_percent);
                 aeris_set_humidity_offset(offset_percent);
+                settings_set_humidity_offset(offset_raw);  // Persist to NVS
+            }
+            else if (message->attribute.id == ZCL_ATTR_REFRESH_INTERVAL) {
+                uint16_t interval_sec = *(uint16_t *)message->attribute.data.value;
+                ESP_LOGI(TAG, "Sensor refresh interval: %d seconds", interval_sec);
+                settings_set_sensor_refresh_interval(interval_sec);  // Persist to NVS (also clamps to 10-3600)
             }
         }
     }
@@ -574,6 +613,7 @@ static esp_err_t zb_attribute_handler(const esp_zb_zcl_set_attr_value_message_t 
             bool on_off = *(bool *)message->attribute.data.value;
             ESP_LOGI(TAG, "Status LED %s", on_off ? "enabled" : "disabled");
             led_set_status_enable(on_off);
+            settings_set_status_led_enabled(on_off);  // Persist to NVS
         }
     }
     
@@ -718,8 +758,9 @@ static void sensor_periodic_update(uint8_t param)
 {
     sensor_update_zigbee_attributes(0);
     
-    /* Schedule next update */
-    esp_zb_scheduler_alarm((esp_zb_callback_t)sensor_periodic_update, 0, SENSOR_UPDATE_INTERVAL_MS);
+    /* Schedule next update using dynamic interval from settings */
+    uint32_t interval_ms = settings_get_sensor_refresh_interval() * 1000;
+    esp_zb_scheduler_alarm((esp_zb_callback_t)sensor_periodic_update, 0, interval_ms);
 }
 
 static void esp_zb_task(void *pvParameters)
@@ -767,15 +808,19 @@ static void esp_zb_task(void *pvParameters)
     ESP_ERROR_CHECK(esp_zb_temperature_meas_cluster_add_attr(temp_cluster, ESP_ZB_ZCL_ATTR_TEMP_MEASUREMENT_MIN_VALUE_ID, &temp_min));
     ESP_ERROR_CHECK(esp_zb_temperature_meas_cluster_add_attr(temp_cluster, ESP_ZB_ZCL_ATTR_TEMP_MEASUREMENT_MAX_VALUE_ID, &temp_max));
     
-    /* Add custom calibration offset attributes to temperature cluster */
-    static int16_t temp_offset_default = 0;   // No offset by default (configure via Zigbee)
-    static int16_t hum_offset_default = 0;    // No offset by default (configure via Zigbee)
+    /* Add custom calibration offset attributes to temperature cluster - use saved values */
+    int16_t temp_offset_default = settings_get_temperature_offset();
+    int16_t hum_offset_default = settings_get_humidity_offset();
+    uint16_t refresh_interval_default = settings_get_sensor_refresh_interval();
     ESP_ERROR_CHECK(esp_zb_cluster_add_attr(temp_cluster, ESP_ZB_ZCL_CLUSTER_ID_TEMP_MEASUREMENT,
                                             ZCL_ATTR_TEMP_OFFSET, ESP_ZB_ZCL_ATTR_TYPE_S16,
                                             ESP_ZB_ZCL_ATTR_ACCESS_READ_WRITE, &temp_offset_default));
     ESP_ERROR_CHECK(esp_zb_cluster_add_attr(temp_cluster, ESP_ZB_ZCL_CLUSTER_ID_TEMP_MEASUREMENT,
                                             ZCL_ATTR_HUMIDITY_OFFSET, ESP_ZB_ZCL_ATTR_TYPE_S16,
                                             ESP_ZB_ZCL_ATTR_ACCESS_READ_WRITE, &hum_offset_default));
+    ESP_ERROR_CHECK(esp_zb_cluster_add_attr(temp_cluster, ESP_ZB_ZCL_CLUSTER_ID_TEMP_MEASUREMENT,
+                                            ZCL_ATTR_REFRESH_INTERVAL, ESP_ZB_ZCL_ATTR_TYPE_U16,
+                                            ESP_ZB_ZCL_ATTR_ACCESS_READ_WRITE, &refresh_interval_default));
     
     ESP_ERROR_CHECK(esp_zb_cluster_list_add_temperature_meas_cluster(temp_hum_clusters, temp_cluster, ESP_ZB_ZCL_CLUSTER_SERVER_ROLE));
     
@@ -963,9 +1008,10 @@ static void esp_zb_task(void *pvParameters)
     /* Endpoint 9: LED Configuration */
     esp_zb_cluster_list_t *led_clusters = esp_zb_zcl_cluster_list_create();
     
-    /* On/Off cluster for LED enable/disable */
+    /* On/Off cluster for LED enable/disable - use saved value */
+    bool saved_leds_enabled = settings_get_sensor_leds_enabled();
     esp_zb_on_off_cluster_cfg_t led_on_off_cfg = {
-        .on_off = true,  // LED enabled by default
+        .on_off = saved_leds_enabled,
     };
     esp_zb_attribute_list_t *led_on_off_cluster = esp_zb_on_off_cluster_create(&led_on_off_cfg);
     ESP_ERROR_CHECK(esp_zb_cluster_list_add_on_off_cluster(led_clusters, led_on_off_cluster, ESP_ZB_ZCL_CLUSTER_SERVER_ROLE));
@@ -998,9 +1044,9 @@ static void esp_zb_task(void *pvParameters)
     uint16_t hum_red_high_default = 80;
     uint16_t pm25_orange_default = 25;
     uint16_t pm25_red_default = 55;
-    uint8_t led_mask_default = 0x1F;  // All 5 LEDs enabled by default (bits 0-4)
-    uint32_t pm_poll_interval_default = 300;  // 5 minutes default polling interval
-    uint8_t led_brightness_default = 32;  // ~12% brightness (range 0-255)
+    uint8_t led_mask_default = settings_get_led_mask();  // Use saved value
+    uint32_t pm_poll_interval_default = settings_get_pm_poll_interval();  // Use saved value
+    uint8_t led_brightness_default = settings_get_led_brightness();  // Use saved value
     
     /* Custom manufacturer-specific attributes (0xF000-0xFFFF range) must use generic add_attr */
     esp_zb_cluster_add_attr(led_config_cluster, ESP_ZB_ZCL_CLUSTER_ID_ANALOG_OUTPUT,
@@ -1054,7 +1100,7 @@ static void esp_zb_task(void *pvParameters)
     
     /* Add Level Control cluster for LED brightness (manually create with write access) */
     esp_zb_attribute_list_t *level_cluster = esp_zb_zcl_attr_list_create(ESP_ZB_ZCL_CLUSTER_ID_LEVEL_CONTROL);
-    uint8_t current_level = 32;  // Default brightness
+    uint8_t current_level = settings_get_led_brightness();  // Use saved value
     ESP_ERROR_CHECK(esp_zb_cluster_add_attr(level_cluster, ESP_ZB_ZCL_CLUSTER_ID_LEVEL_CONTROL,
                                             ESP_ZB_ZCL_ATTR_LEVEL_CONTROL_CURRENT_LEVEL_ID, ESP_ZB_ZCL_ATTR_TYPE_U8,
                                             ESP_ZB_ZCL_ATTR_ACCESS_READ_WRITE | ESP_ZB_ZCL_ATTR_ACCESS_REPORTING, &current_level));
@@ -1071,9 +1117,10 @@ static void esp_zb_task(void *pvParameters)
     /* Endpoint 10: Zigbee Status LED */
     esp_zb_cluster_list_t *status_led_clusters = esp_zb_zcl_cluster_list_create();
     
-    /* On/Off cluster for status LED enable/disable */
+    /* On/Off cluster for status LED enable/disable - use saved value */
+    bool saved_status_led_enabled = settings_get_status_led_enabled();
     esp_zb_on_off_cluster_cfg_t status_led_on_off_cfg = {
-        .on_off = true,  // Status LED enabled by default
+        .on_off = saved_status_led_enabled,
     };
     esp_zb_attribute_list_t *status_led_on_off_cluster = esp_zb_on_off_cluster_create(&status_led_on_off_cfg);
     ESP_ERROR_CHECK(esp_zb_cluster_list_add_on_off_cluster(status_led_clusters, status_led_on_off_cluster, ESP_ZB_ZCL_CLUSTER_SERVER_ROLE));
@@ -1111,6 +1158,11 @@ void app_main(void)
     };
     
     ESP_ERROR_CHECK(nvs_flash_init());
+    
+    /* Initialize settings from NVS early so they're available for cluster creation */
+    ESP_LOGI(TAG, "Loading settings from NVS...");
+    settings_init();
+    
     ESP_ERROR_CHECK(esp_zb_platform_config(&config));
     
     /* OTA validation */

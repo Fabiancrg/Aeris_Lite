@@ -79,6 +79,10 @@ static led_color_t s_status_color = LED_COLOR_ORANGE;  // Default: not joined
 /* LED brightness level (0-255, default 32 = ~12% brightness) */
 static uint8_t s_led_brightness = 32;
 
+/* Last sensor data for immediate LED refresh when enabled */
+static led_sensor_data_t s_last_sensor_data = {0};
+static bool s_sensor_data_valid = false;
+
 /* RGB color values (GRB order for SK6812) */
 typedef struct {
     uint8_t g;
@@ -356,21 +360,30 @@ esp_err_t led_set_color(led_id_t led_id, led_color_t color)
         return ESP_ERR_INVALID_STATE;
     }
     
-    // If disabled, always turn off
-    if (!s_thresholds.enabled && color != LED_COLOR_OFF) {
-        ESP_LOGD(TAG, "%s LED: blocked (LEDs disabled), was %s", LED_NAMES[led_id], 
-                 color == LED_COLOR_GREEN ? "GREEN" : (color == LED_COLOR_ORANGE ? "ORANGE" : "RED"));
-        color = LED_COLOR_OFF;
+    // Check enable flags based on LED type
+    if (led_id == LED_ID_STATUS) {
+        // Status LED uses its own enable flag
+        if (!s_status_led_enabled && color != LED_COLOR_OFF) {
+            ESP_LOGD(TAG, "Status LED: blocked (disabled)");
+            color = LED_COLOR_OFF;
+        }
+    } else {
+        // Sensor indicator LEDs use thresholds.enabled flag
+        if (!s_thresholds.enabled && color != LED_COLOR_OFF) {
+            ESP_LOGD(TAG, "%s LED: blocked (LEDs disabled), was %s", LED_NAMES[led_id], 
+                     color == LED_COLOR_GREEN ? "GREEN" : (color == LED_COLOR_ORANGE ? "ORANGE" : "RED"));
+            color = LED_COLOR_OFF;
+        }
     }
     
     gpio_num_t target_gpio = LED_GPIO_MAP[led_id];
     
-    // Debug: Log the LED set request
-    ESP_LOGI(TAG, "Setting %s LED (GPIO%d) to %s (current_gpio=%d, enabled=%d)", 
+    // Debug: Log the LED set request with brightness
+    ESP_LOGI(TAG, "Setting %s LED (GPIO%d) to %s (brightness=%d, enabled=%d)", 
              LED_NAMES[led_id], target_gpio, 
              color == LED_COLOR_OFF ? "OFF" : (color == LED_COLOR_GREEN ? "GREEN" : 
              (color == LED_COLOR_ORANGE ? "ORANGE" : "RED")),
-             s_current_gpio, s_thresholds.enabled);
+             s_led_brightness, s_thresholds.enabled);
     
     // If we need to switch to a different GPIO, reconfigure RMT
     if (s_current_gpio != target_gpio) {
@@ -440,16 +453,32 @@ esp_err_t led_set_color(led_id_t led_id, led_color_t color)
 
 esp_err_t led_set_enable(bool enable)
 {
+    bool was_enabled = s_thresholds.enabled;
     s_thresholds.enabled = enable;
     
     if (!enable) {
-        // Turn off all LEDs when disabled
+        // Turn off all sensor LEDs when disabled (not status LED)
         for (int i = 0; i < LED_ID_MAX; i++) {
-            led_set_color(i, LED_COLOR_OFF);
+            if (i != LED_ID_STATUS) {
+                led_set_color(i, LED_COLOR_OFF);
+            }
+        }
+    } else if (!was_enabled) {
+        // Just enabled - force refresh all sensor LEDs by resetting tracked colors
+        // This ensures led_update_from_sensors will actually update them
+        for (int i = 0; i < LED_ID_MAX; i++) {
+            if (i != LED_ID_STATUS) {
+                s_current_colors[i] = LED_COLOR_OFF;  // Reset tracking so update is forced
+            }
+        }
+        
+        // Immediately refresh LEDs with last known sensor data
+        if (s_sensor_data_valid) {
+            led_update_from_sensors(&s_last_sensor_data);
         }
     }
     
-    ESP_LOGI(TAG, "All LEDs %s", enable ? "enabled" : "disabled");
+    ESP_LOGI(TAG, "Sensor LEDs %s", enable ? "enabled" : "disabled");
     return ESP_OK;
 }
 
@@ -520,6 +549,10 @@ esp_err_t led_update_from_sensors(const led_sensor_data_t *sensor_data)
     if (!sensor_data) {
         return ESP_ERR_INVALID_ARG;
     }
+    
+    // Store for later use when LEDs are re-enabled
+    memcpy(&s_last_sensor_data, sensor_data, sizeof(led_sensor_data_t));
+    s_sensor_data_valid = true;
     
     if (!s_thresholds.enabled) {
         // Master switch OFF - turn off all LEDs
@@ -636,6 +669,8 @@ esp_err_t led_set_status_enable(bool enable)
     s_status_led_enabled = enable;
     
     if (enable) {
+        // Force update by resetting tracked color first
+        s_current_colors[LED_ID_STATUS] = LED_COLOR_OFF;
         // Restore status color
         led_set_color(LED_ID_STATUS, s_status_color);
         ESP_LOGI(TAG, "Status LED enabled");

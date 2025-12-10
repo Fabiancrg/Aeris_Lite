@@ -26,7 +26,7 @@ static const char *TAG = "AERIS_DRIVER";
 #define SHT45_CMD_READ_SERIAL   0x89  // Read serial number
 
 /* SHT45 timing constants (in ms) */
-#define SHT45_MEASURE_TIME_MS   5     // Measurement duration for medium precision (4.5ms + margin)
+#define SHT45_MEASURE_TIME_MS   10    // Measurement duration for medium precision (4.5ms typical, 10ms for safety)
 #define SHT45_RESET_TIME_MS     10    // Time after soft reset (datasheet says 1ms max, but add margin)
 
 /* LPS22HB Register Addresses */

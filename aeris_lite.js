@@ -8,7 +8,7 @@ export default {
     extend: [m.deviceEndpoints
         (
             {
-                endpoints:{"1":1,"2":2,"3":3,"4":4,"5":5,"6":6,"7":7,"8":8,"9":9,"10":10}}), 
+                endpoints:{"1":1,"2":2,"3":3,"4":4,"5":5,"6":6,"7":7}}), 
                 m.temperature(
                     {
                         endpointNames: ["1"],
@@ -80,43 +80,7 @@ export default {
                 ), 
                 m.numeric(
                     {
-                        name:"pm1",
-                        cluster:"genAnalogInput",
-                        attribute:"presentValue",
-                        reporting:{"min":"MIN","max":"MAX","change":1},
-                        description:"PM1.0 concentration in µg/m³",
-                        unit:"µg/m³",
-                        access:"STATE_GET",
-                        endpointNames:["3"]
-                    }
-                ), 
-                m.numeric(
-                    {
-                        name:"pm25",
-                        cluster:"genAnalogInput",
-                        attribute:"presentValue",
-                        reporting:{"min":"MIN","max":"MAX","change":1},
-                        description:"PM2.5 concentration in µg/m³",
-                        unit:"µg/m³",
-                        access:"STATE_GET",
-                        endpointNames:["4"]
-                    }
-                ), 
-                m.numeric(
-                    {
-                        name:"pm10",
-                        cluster:"genAnalogInput",
-                        attribute:"presentValue",
-                        reporting:{"min":"MIN","max":"MAX","change":1},
-                        description:"PM10 concentration in µg/m³",
-                        unit:"µg/m³",
-                        access:"STATE_GET",
-                        endpointNames:["5"]
-                    }
-                ), 
-                m.numeric(
-                    {
-                        endpointNames:["6"],
+                        endpointNames:["3"],
                         name:"voc_index",
                         cluster:"genAnalogInput",
                         attribute:"presentValue",
@@ -127,7 +91,7 @@ export default {
                 ), 
                 m.numeric(
                     {
-                        endpointNames:["7"],
+                        endpointNames:["4"],
                         name:"nox_index",
                         cluster:"genAnalogInput",
                         attribute:"presentValue",
@@ -139,7 +103,7 @@ export default {
                 ), 
                 m.co2(
                     {
-                        endpointNames:["8"],
+                        endpointNames:["5"],
                         unit: "ppm",
                         scale: 1,  
                         access: "STATE_GET",
@@ -148,14 +112,14 @@ export default {
                 m.onOff(
                     {
                         powerOnBehavior:false,                  
-                        endpointNames:["9"],
+                        endpointNames:["6"],
                         description: "Master enable for all sensor indicator LEDs"
                     }
                 ), 
                 m.onOff(
                     {
                         powerOnBehavior:false,                  
-                        endpointNames:["10"],
+                        endpointNames:["7"],
                         description: "Status LED (network connection indicator)"
                     }
                 ), 
@@ -163,27 +127,13 @@ export default {
                     {
                         name:"led_mask",
                         valueMin:0,
-                        valueMax:31,
+                        valueMax:15,
                         valueStep:1,
                         cluster:"genAnalogOutput",
                         attribute:"presentValue",
-                        description:"LED enable bitmask: bit0=CO2, bit1=VOC, bit2=NOx, bit3=PM2.5, bit4=Humidity (31=all on)",
+                        description:"LED enable bitmask: bit0=CO2, bit1=VOC, bit2=NOx, bit3=Humidity (15=all on)",
                         access:"ALL",
-                        endpointNames:["9"]
-                    }
-                ),
-                m.numeric(
-                    {
-                        name:"pm_poll_interval",
-                        valueMin:0,
-                        valueMax:3600,
-                        valueStep:60,
-                        unit:"s",
-                        cluster:"genAnalogOutput",
-                        attribute:{ID: 0xF00D, type: 0x23},  // UINT32
-                        description:"PM sensor polling interval (0=continuous, 60-3600 seconds, default 300)",
-                        access:"ALL",
-                        endpointNames:["9"]
+                        endpointNames:["6"]
                     }
                 ),
                 m.numeric(
@@ -197,7 +147,7 @@ export default {
                         attribute:"currentLevel",
                         description:"LED brightness level (1=min, 32=default, 255=max)",
                         access:"ALL",
-                        endpointNames:["9"]
+                        endpointNames:["6"]
                     }
                 )
             ],

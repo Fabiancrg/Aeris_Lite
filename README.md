@@ -12,9 +12,9 @@ This project implements a Zigbee Router that reads air quality sensors and expos
 
 ## Key Features
 
-✅ **10 Zigbee Endpoints**: Temperature, Humidity, Pressure, PM1.0, PM2.5, PM10, VOC Index, NOx Index, CO2, LED Config, Status LED  
-✅ **5 High-Precision Sensors**: SHT45, LPS22HB, PMSA003A, SGP41, SCD40  
-✅ **5 RGB Status LEDs**: Independent visual feedback for CO2, VOC, NOx, PM2.5, and Humidity  
+✅ **7 Zigbee Endpoints**: Temperature, Humidity, Pressure, VOC Index, NOx Index, CO2, LED Config, Status LED  
+✅ **4 High-Precision Sensors**: SHT45, LPS22HB, SGP41, SCD40  
+✅ **4 RGB Status LEDs**: Independent visual feedback for CO2, VOC, NOx, and Humidity  
 ✅ **Configurable Thresholds**: Adjust warning/danger levels via Zigbee2MQTT  
 ✅ **Zigbee Router**: Can accept other devices (max 10 children)  
 ✅ **OTA Support**: Firmware updates over Zigbee  
@@ -26,13 +26,11 @@ This project implements a Zigbee Router that reads air quality sensors and expos
 - Air quality sensors:
   - **SHT45 Temperature and Humidity sensor** via I2C
   - **LPS22HB Pressure sensor** via I2C
-  - **PMSA003A Particulate Matter sensor** via UART
   - **SGP41 VOC and NOx sensor** via I2C
   - **SCD40 CO2 sensor** via I2C
-- **5× SK6812 RGB LEDs** (air quality visual indicators)
+- **4× SK6812 RGB LEDs** (air quality visual indicators)
 - I2C connection (SDA/SCL pins configurable)
-- UART connection for PMSA003A (RX pin configurable)
-- **Power supply**: 5V USB, minimum 1A recommended (to support PM sensor fan and 5 LEDs)
+- **Power supply**: 5V USB, 500mA minimum recommended
 
 ## Features
 
@@ -59,23 +57,7 @@ The Zigbee air quality sensor exposes the following sensor endpoints:
 - **Accuracy**: ±0.025 hPa (typical)
 - **Measurement Time**: ~15ms per reading
 
-### Endpoint 3: PM1.0 Sensor
-- **Analog Input Cluster (0x000C)**: PM1.0 concentration (µg/m³)
-- **Sensor**: Plantower PMSA003A (UART, 9600 baud)
-- **Description**: Ultra-fine particulate matter
-
-### Endpoint 4: PM2.5 Sensor
-- **Analog Input Cluster (0x000C)**: PM2.5 concentration (µg/m³)
-- **Sensor**: Plantower PMSA003A (UART, 9600 baud)
-- **Description**: Fine particulate matter
-- **Update Rate**: ~1 second (automatic)
-
-### Endpoint 5: PM10 Sensor
-- **Analog Input Cluster (0x000C)**: PM10 concentration (µg/m³)
-- **Sensor**: Plantower PMSA003A (UART, 9600 baud)
-- **Description**: Coarse particulate matter
-
-### Endpoint 6: VOC Index Sensor
+### Endpoint 3: VOC Index Sensor
 - **Analog Input Cluster (0x000C)**: VOC Index (1-500)
 - **Sensor**: Sensirion SGP41 (I2C)
 - **Description**: Volatile Organic Compounds air quality index
@@ -83,7 +65,7 @@ The Zigbee air quality sensor exposes the following sensor endpoints:
 - **Update Rate**: 1 Hz enforced (minimum 1-second interval per datasheet)
 - **Note**: Requires temperature/humidity compensation from SHT45
 
-### Endpoint 7: NOx Index Sensor
+### Endpoint 4: NOx Index Sensor
 - **Analog Input Cluster (0x000C)**: NOx Index (1-500)
 - **Sensor**: Sensirion SGP41 (I2C)
 - **Description**: Nitrogen Oxides air quality index
@@ -91,7 +73,7 @@ The Zigbee air quality sensor exposes the following sensor endpoints:
 - **Update Rate**: 1 Hz enforced (minimum 1-second interval per datasheet)
 - **Note**: Requires temperature/humidity compensation from SHT45
 
-### Endpoint 8: CO2 Sensor
+### Endpoint 5: CO2 Sensor
 - **CO2 Concentration Cluster (0x040D)**: Carbon dioxide in ppm
 - **Sensor**: Sensirion SCD40 (I2C)
 - **Range**: 400-2000 ppm (optimized for indoor air quality)
@@ -101,13 +83,13 @@ The Zigbee air quality sensor exposes the following sensor endpoints:
 - **Calibration**: Automatic self-calibration (ASC) disabled for stable baseline in controlled environments
 - **Additional**: Built-in temperature and humidity sensor (bonus)
 
-### Endpoint 9: LED Configuration
+### Endpoint 6: LED Configuration
 - **On/Off Cluster (0x0006)**: Master switch to enable/disable all RGB status LEDs
 - **Custom Attributes (0xF000-0xF00C)**: Configurable air quality thresholds and individual LED control
-- **Bitmask Control (0xF00C)**: Individual enable/disable for each of the 5 LEDs
-- **Thresholds**: Adjustable orange/red warning levels for VOC, NOx, CO2, Humidity, PM2.5
+- **Bitmask Control (0xF00C)**: Individual enable/disable for each of the 4 LEDs
+- **Thresholds**: Adjustable orange/red warning levels for VOC, NOx, CO2, Humidity
 
-### Endpoint 10: Status LED
+### Endpoint 7: Status LED
 - **On/Off Cluster (0x0006)**: Enable/disable Zigbee status LED
 - **Automatic Status Indication**: Shows Zigbee network connection status
   - 🟢 **Green**: Successfully connected to coordinator
@@ -118,13 +100,12 @@ The Zigbee air quality sensor exposes the following sensor endpoints:
 
 ### RGB LED Air Quality Indicators
 
-The device includes **5 separate RGB LEDs (SK6812)** that provide real-time visual feedback for air quality:
+The device includes **4 separate RGB LEDs (SK6812)** that provide real-time visual feedback for air quality:
 
 ### LED Indicators
 - **CO2 LED** (GPIO1): Shows carbon dioxide level status
 - **VOC LED** (GPIO18): Shows volatile organic compounds status
 - **NOx LED** (GPIO15): Shows nitrogen oxides status
-- **PM2.5 LED** (GPIO20): Shows particulate matter status
 - **Humidity LED** (GPIO14): Shows humidity level status
 
 ### Color Coding
@@ -158,16 +139,15 @@ Each LED independently displays:
   - Bit 0 (0x01): CO2 LED
   - Bit 1 (0x02): VOC LED
   - Bit 2 (0x04): NOx LED
-  - Bit 3 (0x08): PM2.5 LED
   - Bit 4 (0x10): Humidity LED
-- Default: `0x1F` (all LEDs enabled)
+- Default: `0x17` (all LEDs enabled)
 
 **Examples:**
 ```
-0x1F (31)  - All LEDs enabled
+0x17 (23)  - All LEDs enabled
 0x03 (3)   - Only CO2 and VOC enabled
-0x08 (8)   - Only PM2.5 enabled
-0x0D (13)  - CO2, NOx, and PM2.5 enabled
+0x04 (4)   - Only NOx enabled
+0x05 (5)   - CO2 and NOx enabled
 0x00 (0)   - All LEDs disabled (individual level)
 ```
 
@@ -176,7 +156,6 @@ Each LED independently displays:
 - **NOx Index**: Orange ≥150, Red ≥250
 - **CO2**: Orange ≥1000 ppm, Red ≥1500 ppm
 - **Humidity**: Orange <30% or >70%, Red <20% or >80%
-- **PM2.5**: Orange ≥25 µg/m³, Red ≥55 µg/m³
 
 See [LED Configuration Guide](LED_CONFIGURATION.md) for detailed setup and usage.
 
@@ -196,25 +175,6 @@ The device communicates with most sensors via I2C:
 - LPS22HB (Pressure): 0x5C (default, SA0=0) or 0x5D (SA0=1)
 - SGP41 (VOC/NOx): 0x59 (fixed address)
 - SCD40 (CO2): 0x62 (fixed address)
-
-### UART for PMSA003A (Particulate Matter Sensor)
-
-The PMSA003A sensor uses UART communication:
-
-- **RX Pin**: GPIO 5 (receives data from PMSA003A TX)
-- **TX Pin**: GPIO 4 (sends commands to PMSA003A RX)
-- **SET Pin**: GPIO 19 (sleep/wake control - HIGH=active, LOW=sleep)
-- **RESET Pin**: GPIO 2 (hardware reset, optional - active LOW)
-- **Baud Rate**: 9600
-- **Data Format**: 8N1 (8 data bits, no parity, 1 stop bit)
-- **Frame Length**: 32 bytes
-- **Update Rate**: ~1 second (automatic from sensor)
-
-**PMSA003A Data Format:**
-- Start characters: 0x42 0x4D
-- Frame length: 28 data bytes + 2 byte checksum
-- PM1.0, PM2.5, PM10 concentrations (both CF=1 and atmospheric)
-- Particle counts for various size ranges
 
 ## Project Structure
 
@@ -264,10 +224,10 @@ Aeris_zb/
 ### Zigbee Configuration
 
 The device is configured as a Zigbee Router:
-- **Endpoints**: 1-10 (sensor data + LED configuration + status LED)
-  - Endpoints 1-8: Sensor data (Temperature, Humidity, Pressure, PM1.0, PM2.5, PM10, VOC, NOx, CO2)
-  - Endpoint 9: Air quality LED configuration and control
-  - Endpoint 10: Zigbee status LED control
+- **Endpoints**: 1-7 (sensor data + LED configuration + status LED)
+  - Endpoints 1-5: Sensor data (Temperature, Humidity, Pressure, VOC, NOx, CO2)
+  - Endpoint 6: Air quality LED configuration and control
+  - Endpoint 7: Zigbee status LED control
 - **Profile**: Home Automation (0x0104)
 - **Device IDs**: Various sensor types + On/Off output for LED control
 - **Channel Mask**: All channels
@@ -275,21 +235,21 @@ The device is configured as a Zigbee Router:
 
 ### LED Configuration
 
-**Air Quality LEDs (5 LEDs)** - Configure via Zigbee2MQTT endpoint 9:
+**Air Quality LEDs (4 LEDs)** - Configure via Zigbee2MQTT endpoint 6:
 - **Master On/Off**: Single switch to enable/disable all LEDs (On/Off cluster)
 - **Individual Control**: Bitmask attribute (0xF00C) for per-LED enable/disable
-  - Set to `0x1F` (31) for all LEDs
+  - Set to `0x17` (23) for all LEDs
   - Set to `0x03` (3) for CO2 + VOC only
   - Set to `0x00` (0) to disable all (at individual level)
-- **Thresholds**: 12 configurable attributes (VOC, NOx, CO2, Humidity, PM2.5 orange/red levels)
-- **GPIO Pins**: Configurable in `main/board.h` (defaults: GPIO21, 4, 8, 5, 10)
+- **Thresholds**: 8 configurable attributes (VOC, NOx, CO2, Humidity orange/red levels)
+- **GPIO Pins**: Configurable in `main/board.h` (defaults: GPIO1, 18, 15, 14)
 
 **Control Logic:**
 - Master OFF → All LEDs off (ignores bitmask)
 - Master ON + bit set → LED shows sensor status color
 - Master ON + bit clear → LED off
 
-**Zigbee Status LED (1 LED)** - Configure via Zigbee2MQTT endpoint 10:
+**Zigbee Status LED (1 LED)** - Configure via Zigbee2MQTT endpoint 7:
 - **On/Off Control**: Enable/disable status LED
 - **Automatic Status Indication**:
   - 🟢 **Green**: Successfully connected to Zigbee coordinator
@@ -307,56 +267,6 @@ Configure sensor I2C addresses and settings in `aeris_driver.c`:
 - Default I2C pins: SDA=GPIO6, SCL=GPIO7
 - Adjust pins in `aeris_driver.h` if needed
 
-### PM Sensor Power Management
-
-The PMSA003A particulate matter sensor includes configurable power management to reduce power consumption:
-
-**Power Modes:**
-- **Continuous Mode** (interval = 0): Sensor always on, readings available every second (~100mA)
-- **Polling Mode** (interval > 0): Sensor sleeps between readings, wakes periodically (~28.5mA average at 5 min)
-
-**Default Configuration:**
-- Polling interval: 300 seconds (5 minutes)
-- Average power: ~28.5 mA (vs 100 mA continuous)
-- **Power savings: ~71.5 mA** (~31% total system reduction)
-
-**Configuration via Zigbee:**
-- Attribute ID: `0xF00D` on endpoint 9
-- Data type: `uint32_t` (4 bytes)
-- Valid values:
-  - `0` = Continuous mode (always on)
-  - `60-86400` = Polling interval in seconds (1 minute to 24 hours)
-  - Default: `300` (5 minutes)
-
-**Trade-offs:**
-- ✅ Lower power consumption (longer battery life if battery-powered)
-- ✅ Reduced sensor wear (fan runs less)
-- ⚠️ Delayed response (up to `interval` seconds to detect air quality changes)
-- ⚠️ 30-second warm-up period after wake before stable readings
-
-**Example Configuration:**
-
-```javascript
-// Via Zigbee2MQTT - Set 10-minute polling
-await publish('zigbee2mqtt/aeris/set', {pm_polling_interval: 600});
-
-// Continuous mode (always on)
-await publish('zigbee2mqtt/aeris/set', {pm_polling_interval: 0});
-
-// 1-hour polling (battery-powered optimization)
-await publish('zigbee2mqtt/aeris/set', {pm_polling_interval: 3600});
-```
-
-**Power Consumption Comparison:**
-
-| Mode | PM Sensor | ESP32-C6 | Total | Notes |
-|------|-----------|----------|-------|-------|
-| Continuous | 100 mA | 50-80 mA | ~228 mA | Real-time readings |
-| 5-min polling | 28.5 mA avg | 50-80 mA | ~157 mA | Default, balanced |
-| 1-hour polling | 5.4 mA avg | 50-80 mA | ~135 mA | Max battery life |
-
-*Note: ESP32-C6 power varies with Zigbee activity (router mode maintains network)*
-
 ### Joining the Network
 
 On first boot, the device will automatically enter network steering mode. Once joined, the device will save the network credentials and automatically rejoin on subsequent boots.
@@ -372,14 +282,12 @@ On first boot, the device will automatically enter network steering mode. Once j
    - Temperature (°C)
    - Humidity (%)
    - Pressure (hPa)
-   - PM1.0, PM2.5, PM10 (µg/m³)
    - VOC Index (1-500)
    - NOx Index (1-500)
    - CO2 (ppm)
-   - **Air Quality LED Master Switch** (On/Off - controls all 5 air quality LEDs)
-   - **LED Enable Mask** (0-31 - individual LED control)
+   - **Air Quality LED Master Switch** (On/Off - controls all 4 air quality LEDs)
+   - **LED Enable Mask** (0-15 - individual LED control)
    - **LED Thresholds** (configurable warning/danger levels)
-   - **PM Polling Interval** (0-86400 seconds - power management)
    - **Status LED Switch** (On/Off - controls Zigbee status LED)
 
 ### LED Control Examples
@@ -398,17 +306,17 @@ await publish('zigbee2mqtt/aeris/set', {brightness: 128});
 await publish('zigbee2mqtt/aeris/set', {brightness: 255});  // Max brightness
 await publish('zigbee2mqtt/aeris/set', {brightness: 64});   // Dim
 
-// Enable all 5 LEDs individually (bitmask)
-await publish('zigbee2mqtt/aeris/set', {led_enable_mask: 31});  // 0x1F
+// Enable all 4 LEDs individually (bitmask)
+await publish('zigbee2mqtt/aeris/set', {led_enable_mask: 15});  // 0x0F
 
 // Enable only CO2 and VOC LEDs
 await publish('zigbee2mqtt/aeris/set', {led_enable_mask: 3});   // 0x03
 
-// Enable only PM2.5 LED
-await publish('zigbee2mqtt/aeris/set', {led_enable_mask: 8});   // 0x08
+// Enable only NOx LED
+await publish('zigbee2mqtt/aeris/set', {led_enable_mask: 4});   // 0x04
 
-// Enable CO2, NOx, and PM2.5 LEDs
-await publish('zigbee2mqtt/aeris/set', {led_enable_mask: 13});  // 0x0D
+// Enable CO2, VOC, and Humidity LEDs
+await publish('zigbee2mqtt/aeris/set', {led_enable_mask: 11});  // 0x0B
 
 // Disable all LEDs via bitmask (master can still be ON)
 await publish('zigbee2mqtt/aeris/set', {led_enable_mask: 0});
@@ -428,11 +336,10 @@ await publish('zigbee2mqtt/aeris/set', {sensor_refresh_interval: 60}); // 1 minu
 
 ### Visual LED Status
 
-**Air Quality LEDs (5 RGB LEDs)** provide real-time visual feedback:
+**Air Quality LEDs (4 RGB LEDs)** provide real-time visual feedback:
 - **CO2 LED**: Green/Orange/Red based on CO2 levels
 - **VOC LED**: Green/Orange/Red based on VOC Index
 - **NOx LED**: Green/Orange/Red based on NOx Index
-- **PM2.5 LED**: Green/Orange/Red based on particulate matter
 - **Humidity LED**: Green/Orange/Red based on humidity range
 
 **Status LED (1 RGB LED)** shows Zigbee network state:
@@ -482,15 +389,6 @@ This project provides a framework for air quality sensors. You'll need to implem
   - Configurable output rate (1-75 Hz)
 - **Alternative**: BMP280, BME280 (Bosch sensors)
 
-### Particulate Matter
-- **PMSA003A** (implemented): Plantower laser PM sensor
-  - UART interface (9600 baud)
-  - Measures PM1.0, PM2.5, PM10
-  - Automatic 1-second updates
-  - Low power consumption
-  - Atmospheric environment correction included
-- **Alternative**: PMS5003 (similar protocol, same manufacturer)
-
 ### VOC and NOx Index
 - **SGP41** (implemented): Sensirion VOC and NOx sensor
   - I2C interface (address 0x59)
@@ -532,14 +430,7 @@ The `aeris_driver.c` file contains:
    - Temperature and humidity conversion
    - Humidity clamping to 0-100% range
 
-2. **PMSA003A implementation** (complete):
-   - UART initialization and configuration
-   - Background task for continuous reading
-   - Frame parsing with checksum validation
-   - Automatic atmospheric environment values
-   - Particle count data available
-
-3. **LPS22HB implementation** (complete):
+2. **LPS22HB implementation** (complete):
    - I2C initialization and device detection
    - WHO_AM_I verification (0xB1)
    - 25 Hz output data rate
@@ -580,65 +471,6 @@ SDA       → GPIO 6
 ```
 
 **Note**: SHT45 operates at 3.3V. No level shifters needed with ESP32-C6.
-
-### PMSA003A Wiring
-
-The PMSA003-A uses a **10-pin connector** with the following pinout:
-
-```
-PMSA003A 10-Pin Connector → Function              → ESP32-C6
-─────────────────────────────────────────────────────────────────
-Pin 1:  VCC                → Positive power 5V    → 5V
-Pin 2:  VCC                → Positive power 5V    → 5V
-Pin 3:  GND                → Negative power       → GND
-Pin 4:  GND                → Negative power       → GND
-Pin 5:  RESET              → Reset (active LOW)   → GPIO 2 (optional, for HW reset)
-Pin 6:  NC                 → Not connected        → Not connected
-Pin 7:  RXD                → Serial RX (TTL 3.3V) → GPIO 4 (ESP32 UART TX)
-Pin 8:  NC                 → Not connected        → Not connected
-Pin 9:  TXD                → Serial TX (TTL 3.3V) → GPIO 5 (ESP32 UART RX)
-Pin 10: SET                → Sleep/Wake (TTL 3.3V)→ GPIO 19 (for power management)
-```
-
-**Important Notes:**
-- **Power**: Dual VCC pins (Pin 1-2) require **5V**, dual GND pins (Pin 3-4) to ground
-- **Signal levels**: All digital signals (RXD, TXD, RESET, SET) are **TTL 3.3V** - safe for ESP32-C6
-- **SET pin (Pin 10)**: HIGH = normal operation, LOW = sleep mode
-  - **Recommended**: Connect to GPIO for power management (put sensor to sleep when not needed)
-  - If left floating: sensor always runs (consumes ~100mA continuously)
-- **RESET pin (Pin 5)**: LOW = reset, HIGH = normal operation
-  - **Optional**: Connect to GPIO for hardware reset capability
-  - If left floating: relies on internal pull-up (normal operation)
-- **GPIO 20 (ESP RX)** ← Pin 9 (TXD) - **Required** for receiving sensor data
-- **GPIO 18 (ESP TX)** → Pin 7 (RXD) - **Optional** for sending commands
-
-**Circuit Attentions (from datasheet):**
-1. **5V power required**: The internal fan requires 5V, but all data signals are 3.3V TTL
-   - ✅ No level conversion needed when interfacing with ESP32-C6 (3.3V MCU)
-   - ⚠️ Level conversion required if using 5V MCU (Arduino Uno, etc.)
-2. **Internal pull-ups**: SET (Pin 10) and RESET (Pin 5) have internal pull-up resistors
-   - **Can be left floating** if continuous operation is desired (default = HIGH)
-   - **Should connect to GPIO** for power management:
-     - **Pin 10 (SET)**: Essential for sleep/wake control (save ~100mA when sleeping)
-     - **Pin 5 (RESET)**: Optional for hardware reset capability
-3. **Do NOT connect Pin 6 and Pin 8** - These pins must remain unconnected
-4. **30-second warm-up**: After waking from sleep mode, wait at least 30 seconds for stable readings
-   - Fan needs time to stabilize
-   - Firmware must account for this delay in polling mode
-
-**Current Configuration (with Power Management):**
-- **Pin 10 (SET)** → **GPIO 19** - for sleep/wake control (implemented)
-- **Pin 5 (RESET)** → **GPIO 2** - optional, for hardware reset (implemented)
-- **Pin 7 (RXD)** → **GPIO 4** (ESP UART TX) - for sending commands (implemented)
-- **Pin 9 (TXD)** → **GPIO 5** (ESP UART RX) - for receiving data (implemented)
-
-**Simple Configuration (continuous operation):**
-- **Pin 10 (SET)** → Leave floating (sensor always on)
-- **Pin 5 (RESET)** → Leave floating (normal operation)
-- **Pin 7 (RXD)** → Not connected (no commands sent)
-- **Pin 9 (TXD)** → GPIO 5 (ESP UART RX) - for receiving data
-
-**Note:** GPIO assignments can be changed in `main/board.h` if needed.
 
 ### LPS22HB Wiring
 
@@ -683,11 +515,10 @@ The device uses 5 separate RGB LEDs for visual air quality feedback:
 
 ```
 LED Purpose    GPIO    Connection
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 CO2 LED        1       Data line
 VOC LED        18      Data line
 NOx LED        15      Data line
-PM2.5 LED      20      Data line
 Humidity LED   14      Data line
 Status LED     8       Data line (Zigbee status)
 
@@ -741,25 +572,12 @@ The SGP41 currently uses a **simplified placeholder** for VOC/NOx index calculat
   - **SCD40**: Check serial number readout
   - **SCD40**: Verify data ready status (measurements every 5 seconds)
   - **SCD40**: Check CRC errors in logs
-- **PMSA003A (PM sensor)**:
-  - Verify UART RX connection (PMSA003A TX → GPIO20)
-  - Verify UART TX connection (PMSA003A RX → GPIO18) for sleep/wake commands
-  - Check 5V power supply to sensor
-  - Ensure baud rate is 9600
-  - Look for "PMSA003A data:" log messages
-  - Check frame checksum errors in logs
-  - **Polling mode**: Wait up to interval + 35 seconds for readings (30s warm-up + 5s reading)
-  - **Continuous mode**: Readings should update every second
-  - Check "PMSA003A waking up" and "entering sleep mode" log messages in polling mode
 
 **Power Note**: 
-- **6 LEDs** (5 air quality + 1 status) at full brightness: ~360mA
-- **PMSA003A continuous mode**: ~100mA (fan always on)
-- **PMSA003A polling mode** (5 min): ~28.5mA average
+- **5 LEDs** (4 air quality + 1 status) at full brightness: ~300mA
 - **ESP32-C6 + sensors**: ~50-80mA
-- **Total (continuous PM)**: ~510-540mA
-- **Total (polling PM)**: ~440-470mA average
-- **Recommended power supply**: 1A minimum (USB 5V)
+- **Total**: ~350-380mA
+- **Recommended power supply**: 500mA minimum (USB 5V)
 
 ### Build errors
 - Make sure ESP-IDF v5.5.1+ is installed

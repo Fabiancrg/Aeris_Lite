@@ -1,6 +1,6 @@
 /*
  * RGB LED Indicator Driver Implementation (SK6812)
- * Controls 5 separate LEDs for CO2, VOC, NOx, PM2.5, and Humidity monitoring
+ * Controls 4 separate LEDs for CO2, VOC, NOx, and Humidity monitoring
  */
 
 #include "led_indicator.h"
@@ -287,7 +287,7 @@ esp_err_t led_indicator_init(void)
     ESP_LOGI(TAG, "RGB LED driver initialized (shared RMT channel)");
     
 #if 0  // LED test sequence disabled for debugging - uncomment to re-enable
-    // Run LED test sequence: CO2 -> VOC -> Humidity -> PM2.5 -> NOx
+    // Run LED test sequence: CO2 -> VOC -> Humidity -> NOx
     ESP_LOGI(TAG, "Running LED test sequence...");
     
     // Temporarily enable LEDs for test (bypass enabled check)

@@ -1,7 +1,7 @@
 /*
  * RGB LED Indicator Driver (SK6812)
  * Provides visual feedback for air quality sensor readings
- * 5 separate LEDs: CO2, VOC, NOx, PM2.5, Humidity
+ * 4 separate LEDs: CO2, VOC, NOx, Humidity
  * 1 status LED: Zigbee network status
  */
 
@@ -17,7 +17,6 @@ typedef enum {
     LED_ID_CO2 = 0,
     LED_ID_VOC,
     LED_ID_NOX,
-    LED_ID_PM25,
     LED_ID_HUMIDITY,
     LED_ID_STATUS,      // Zigbee network status
     LED_ID_MAX
@@ -27,9 +26,8 @@ typedef enum {
 #define LED_ENABLE_CO2_BIT      (1 << 0)  // Bit 0: CO2 LED
 #define LED_ENABLE_VOC_BIT      (1 << 1)  // Bit 1: VOC LED
 #define LED_ENABLE_NOX_BIT      (1 << 2)  // Bit 2: NOx LED
-#define LED_ENABLE_PM25_BIT     (1 << 3)  // Bit 3: PM2.5 LED
-#define LED_ENABLE_HUM_BIT      (1 << 4)  // Bit 4: Humidity LED
-#define LED_ENABLE_ALL          0x1F      // All 5 LEDs enabled (bits 0-4)
+#define LED_ENABLE_HUM_BIT      (1 << 3)  // Bit 3: Humidity LED
+#define LED_ENABLE_ALL          0x0F      // All 4 LEDs enabled (bits 0-3)
 
 /* LED Color definitions */
 typedef enum {
@@ -61,10 +59,6 @@ typedef struct {
     uint16_t humidity_orange_high;  // Too humid (default: 70%)
     uint16_t humidity_red_low;      // Very dry (default: 20%)
     uint16_t humidity_red_high;     // Very humid (default: 80%)
-    
-    // PM2.5 thresholds (µg/m³)
-    uint16_t pm25_orange;   // Warning threshold (default: 25 µg/m³)
-    uint16_t pm25_red;      // Danger threshold (default: 55 µg/m³)
 } led_thresholds_t;
 
 /* Sensor data for LED evaluation */
@@ -73,7 +67,6 @@ typedef struct {
     uint16_t nox_index;
     uint16_t co2_ppm;
     float humidity_percent;
-    float pm25_ug_m3;
 } led_sensor_data_t;
 
 /**

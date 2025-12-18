@@ -267,12 +267,7 @@ static esp_err_t deferred_driver_init(void)
         
         /* Apply saved calibration offsets */
         aeris_set_temperature_offset(settings_get_temperature_offset() / 10.0f);
-        /* Apply saved calibration offsets */
-        aeris_set_temperature_offset(settings_get_temperature_offset() / 10.0f);
         aeris_set_humidity_offset(settings_get_humidity_offset() / 10.0f);
-        
-        /* Apply saved PM sensor polling interval */
-        aeris_set_pm_polling_interval(settings_get_pm_poll_interval());
     }
     
     ESP_LOGI(TAG, "[INIT] Deferred initialization complete");
@@ -340,11 +335,10 @@ void esp_zb_app_signal_handler(esp_zb_app_signal_t *signal_struct)
                 ZCL_LED_ATTR_ENABLE_MASK);
             if (led_mask_attr && led_mask_attr->data_p) {
                 thresholds.led_mask = *(uint8_t *)led_mask_attr->data_p;
-                ESP_LOGI(TAG, "[BOOT] LED mask from NVS: 0x%02X (CO2:%d VOC:%d NOx:%d PM2.5:%d Hum:%d)", 
+                ESP_LOGI(TAG, "[BOOT] LED mask from NVS: 0x%02X (CO2:%d VOC:%d NOx:%d Hum:%d)", 
                          thresholds.led_mask,
                          !!(thresholds.led_mask & (1<<0)), !!(thresholds.led_mask & (1<<1)), 
-                         !!(thresholds.led_mask & (1<<2)), !!(thresholds.led_mask & (1<<3)), 
-                         !!(thresholds.led_mask & (1<<4)));
+                         !!(thresholds.led_mask & (1<<2)), !!(thresholds.led_mask & (1<<4)));
             }
             
             led_set_thresholds(&thresholds);
@@ -460,11 +454,10 @@ static esp_err_t zb_attribute_handler(const esp_zb_zcl_set_attr_value_message_t 
                     // presentValue (0x55) is used as LED mask (float -> uint8)
                     float float_val = *(float *)message->attribute.data.value;
                     thresholds.led_mask = (uint8_t)float_val;
-                    ESP_LOGI(TAG, "LED mask set via presentValue: 0x%02X (CO2:%d VOC:%d NOx:%d PM2.5:%d Hum:%d)", 
+                    ESP_LOGI(TAG, "LED mask set via presentValue: 0x%02X (CO2:%d VOC:%d NOx:%d Hum:%d)", 
                              thresholds.led_mask,
                              !!(thresholds.led_mask & (1<<0)), !!(thresholds.led_mask & (1<<1)), 
-                             !!(thresholds.led_mask & (1<<2)), !!(thresholds.led_mask & (1<<3)), 
-                             !!(thresholds.led_mask & (1<<4)));
+                             !!(thresholds.led_mask & (1<<2)), !!(thresholds.led_mask & (1<<3)));
                     settings_set_led_mask(thresholds.led_mask);  // Persist to NVS
                     break;
                 }
@@ -528,40 +521,15 @@ static esp_err_t zb_attribute_handler(const esp_zb_zcl_set_attr_value_message_t 
                     ESP_LOGI(TAG, "Humidity red high threshold: %d%%", value);
                     break;
                 }
-                case ZCL_LED_ATTR_PM25_ORANGE: {
-                    uint16_t value = *(uint16_t *)message->attribute.data.value;
-                    thresholds.pm25_orange = value;
-                    ESP_LOGI(TAG, "PM2.5 orange threshold: %d µg/m3", value);
-                    break;
-                }
-                case ZCL_LED_ATTR_PM25_RED: {
-                    uint16_t value = *(uint16_t *)message->attribute.data.value;
-                    thresholds.pm25_red = value;
-                    ESP_LOGI(TAG, "PM2.5 red threshold: %d µg/m3", value);
-                    break;
-                }
                 case ZCL_LED_ATTR_ENABLE_MASK: {
                     uint8_t value = *(uint8_t *)message->attribute.data.value;
                     thresholds.led_mask = value;
-                    ESP_LOGI(TAG, "LED enable mask: 0x%02X (CO2:%d VOC:%d NOx:%d PM2.5:%d Hum:%d)", 
+                    ESP_LOGI(TAG, "LED enable mask: 0x%02X (CO2:%d VOC:%d NOx:%d Hum:%d)", 
                              value,
                              !!(value & (1<<0)), !!(value & (1<<1)), !!(value & (1<<2)),
-                             !!(value & (1<<3)), !!(value & (1<<4)));
+                             !!(value & (1<<4)));
                     break;
                 }
-                case ZCL_LED_ATTR_PM_POLL_INTERVAL: {
-                        uint32_t interval = *(uint32_t *)message->attribute.data.value;
-                        ESP_LOGI(TAG, "PM sensor polling interval: %lu seconds %s", 
-                                 interval, interval == 0 ? "(continuous)" : "");
-                        esp_err_t err = aeris_set_pm_polling_interval(interval);
-                        if (err != ESP_OK) {
-                            ESP_LOGW(TAG, "Failed to set PM polling interval: %s", 
-                                     esp_err_to_name(err));
-                        }
-                        settings_set_pm_poll_interval((uint16_t)interval);  // Persist to NVS
-                        updated = false;  // Don't update thresholds
-                    }
-                    break;
                 case ZCL_LED_ATTR_BRIGHTNESS: {
                     uint8_t brightness = *(uint8_t *)message->attribute.data.value;
                     ESP_LOGI(TAG, "LED brightness: %d", brightness);
@@ -640,7 +608,6 @@ static void sensor_update_zigbee_attributes(uint8_t param)
     /* Read all sensors to update current_state */
     float temp_c, humidity;
     float pressure_hpa;
-    float pm1_0, pm2_5, pm10;
     uint16_t voc_index, nox_index;
     uint16_t co2_ppm;
     
@@ -652,11 +619,6 @@ static void sensor_update_zigbee_attributes(uint8_t param)
     /* Read pressure from LPS22HB */
     if (aeris_read_pressure(&pressure_hpa) != ESP_OK) {
         ESP_LOGW(TAG, "Failed to read pressure");
-    }
-    
-    /* Read PM data (from background task) */
-    if (aeris_read_pm(&pm1_0, &pm2_5, &pm10) != ESP_OK) {
-        ESP_LOGD(TAG, "PM data not available");
     }
     
     /* Read VOC from SGP41 */
@@ -686,8 +648,6 @@ static void sensor_update_zigbee_attributes(uint8_t param)
     ESP_LOGI(TAG, "Updating Zigbee attributes:");
     ESP_LOGI(TAG, "  Temp: %.2f°C, Humidity: %.2f%%", state.temperature_c, state.humidity_percent);
     ESP_LOGI(TAG, "  Pressure: %.2fhPa", state.pressure_hpa);
-    ESP_LOGI(TAG, "  PM1.0: %.2f, PM2.5: %.2f, PM10: %.2f µg/m3", 
-             state.pm1_0_ug_m3, state.pm2_5_ug_m3, state.pm10_ug_m3);
     ESP_LOGI(TAG, "  VOC Index: %d, NOx Index: %d, CO2: %d ppm", state.voc_index, state.nox_index, state.co2_ppm);
     
     /* Update Endpoint 1: Temperature and Humidity */
@@ -710,37 +670,19 @@ static void sensor_update_zigbee_attributes(uint8_t param)
                                   ESP_ZB_ZCL_CLUSTER_SERVER_ROLE, ESP_ZB_ZCL_ATTR_PRESSURE_MEASUREMENT_VALUE_ID,
                                   &pressure_zigbee, false);
     
-    /* Update Endpoint 3: PM1.0 */
-    float pm1_value = state.pm1_0_ug_m3;
-    esp_zb_zcl_set_attribute_val(HA_ESP_PM1_ENDPOINT, ESP_ZB_ZCL_CLUSTER_ID_ANALOG_INPUT,
-                                  ESP_ZB_ZCL_CLUSTER_SERVER_ROLE, ESP_ZB_ZCL_ATTR_ANALOG_INPUT_PRESENT_VALUE_ID,
-                                  &pm1_value, false);
-    
-    /* Update Endpoint 4: PM2.5 */
-    float pm25_value = state.pm2_5_ug_m3;
-    esp_zb_zcl_set_attribute_val(HA_ESP_PM25_ENDPOINT, ESP_ZB_ZCL_CLUSTER_ID_ANALOG_INPUT,
-                                  ESP_ZB_ZCL_CLUSTER_SERVER_ROLE, ESP_ZB_ZCL_ATTR_ANALOG_INPUT_PRESENT_VALUE_ID,
-                                  &pm25_value, false);
-    
-    /* Update Endpoint 5: PM10 */
-    float pm10_value = state.pm10_ug_m3;
-    esp_zb_zcl_set_attribute_val(HA_ESP_PM10_ENDPOINT, ESP_ZB_ZCL_CLUSTER_ID_ANALOG_INPUT,
-                                  ESP_ZB_ZCL_CLUSTER_SERVER_ROLE, ESP_ZB_ZCL_ATTR_ANALOG_INPUT_PRESENT_VALUE_ID,
-                                  &pm10_value, false);
-    
-    /* Update Endpoint 6: VOC Index */
+    /* Update Endpoint 3: VOC Index */
     float voc_value = (float)state.voc_index;
     esp_zb_zcl_set_attribute_val(HA_ESP_VOC_ENDPOINT, ESP_ZB_ZCL_CLUSTER_ID_ANALOG_INPUT,
                                   ESP_ZB_ZCL_CLUSTER_SERVER_ROLE, ESP_ZB_ZCL_ATTR_ANALOG_INPUT_PRESENT_VALUE_ID,
                                   &voc_value, false);
     
-    /* Update Endpoint 7: NOx Index */
+    /* Update Endpoint 4: NOx Index */
     float nox_value = (float)state.nox_index;
     esp_zb_zcl_set_attribute_val(HA_ESP_NOX_ENDPOINT, ESP_ZB_ZCL_CLUSTER_ID_ANALOG_INPUT,
                                   ESP_ZB_ZCL_CLUSTER_SERVER_ROLE, ESP_ZB_ZCL_ATTR_ANALOG_INPUT_PRESENT_VALUE_ID,
                                   &nox_value, false);
     
-    /* Update Endpoint 8: CO2 */
+    /* Update Endpoint 5: CO2 */
     float co2_value = (float)state.co2_ppm;
     esp_zb_zcl_set_attribute_val(HA_ESP_CO2_ENDPOINT, ESP_ZB_ZCL_CLUSTER_ID_CARBON_DIOXIDE_MEASUREMENT,
                                   ESP_ZB_ZCL_CLUSTER_SERVER_ROLE, ESP_ZB_ZCL_ATTR_CARBON_DIOXIDE_MEASUREMENT_MEASURED_VALUE_ID,
@@ -752,7 +694,6 @@ static void sensor_update_zigbee_attributes(uint8_t param)
         .nox_index = state.nox_index,
         .co2_ppm = state.co2_ppm,
         .humidity_percent = state.humidity_percent,
-        .pm25_ug_m3 = state.pm2_5_ug_m3,
     };
     led_update_from_sensors(&led_data);
 }
@@ -877,106 +818,7 @@ static void esp_zb_task(void *pvParameters)
     };
     esp_zb_ep_list_add_ep(ep_list, pressure_clusters, endpoint2_config);
     
-    /* Endpoint 3: PM1.0 - using Analog Input cluster with REPORTING flag */
-    esp_zb_cluster_list_t *pm1_clusters = esp_zb_zcl_cluster_list_create();
-    
-    /* Create Analog Input cluster manually to set REPORTING flag on present_value from the start */
-    esp_zb_attribute_list_t *pm1_cluster = esp_zb_zcl_attr_list_create(ESP_ZB_ZCL_CLUSTER_ID_ANALOG_INPUT);
-    /* Mandatory attributes for Analog Input cluster */
-    static bool pm1_out_of_service = false;
-    static float pm1_present_value = 0.0f;
-    static uint8_t pm1_status_flags = 0;
-    esp_zb_cluster_add_attr(pm1_cluster, ESP_ZB_ZCL_CLUSTER_ID_ANALOG_INPUT,
-                            ESP_ZB_ZCL_ATTR_ANALOG_INPUT_OUT_OF_SERVICE_ID, ESP_ZB_ZCL_ATTR_TYPE_BOOL,
-                            ESP_ZB_ZCL_ATTR_ACCESS_READ_ONLY, &pm1_out_of_service);
-    esp_zb_cluster_add_attr(pm1_cluster, ESP_ZB_ZCL_CLUSTER_ID_ANALOG_INPUT,
-                            ESP_ZB_ZCL_ATTR_ANALOG_INPUT_PRESENT_VALUE_ID, ESP_ZB_ZCL_ATTR_TYPE_SINGLE,
-                            ESP_ZB_ZCL_ATTR_ACCESS_READ_ONLY | ESP_ZB_ZCL_ATTR_ACCESS_REPORTING, &pm1_present_value);
-    esp_zb_cluster_add_attr(pm1_cluster, ESP_ZB_ZCL_CLUSTER_ID_ANALOG_INPUT,
-                            ESP_ZB_ZCL_ATTR_ANALOG_INPUT_STATUS_FLAGS_ID, ESP_ZB_ZCL_ATTR_TYPE_8BITMAP,
-                            ESP_ZB_ZCL_ATTR_ACCESS_READ_ONLY, &pm1_status_flags);
-    char pm1_desc[] = "\x0B""PM1.0 ug/m3";
-    esp_zb_cluster_add_attr(pm1_cluster, ESP_ZB_ZCL_CLUSTER_ID_ANALOG_INPUT,
-                            ESP_ZB_ZCL_ATTR_ANALOG_INPUT_DESCRIPTION_ID, ESP_ZB_ZCL_ATTR_TYPE_CHAR_STRING,
-                            ESP_ZB_ZCL_ATTR_ACCESS_READ_ONLY, pm1_desc);
-    ESP_ERROR_CHECK(esp_zb_cluster_list_add_analog_input_cluster(pm1_clusters, pm1_cluster, ESP_ZB_ZCL_CLUSTER_SERVER_ROLE));
-    ESP_ERROR_CHECK(esp_zb_cluster_list_add_identify_cluster(pm1_clusters, esp_zb_identify_cluster_create(NULL), ESP_ZB_ZCL_CLUSTER_SERVER_ROLE));
-    
-    esp_zb_endpoint_config_t endpoint3_config = {
-        .endpoint = HA_ESP_PM1_ENDPOINT,
-        .app_profile_id = ESP_ZB_AF_HA_PROFILE_ID,
-        .app_device_id = ESP_ZB_HA_SIMPLE_SENSOR_DEVICE_ID,
-        .app_device_version = 0
-    };
-    esp_zb_ep_list_add_ep(ep_list, pm1_clusters, endpoint3_config);
-    
-    /* Endpoint 4: PM2.5 - using Analog Input cluster with REPORTING flag */
-    esp_zb_cluster_list_t *pm25_clusters = esp_zb_zcl_cluster_list_create();
-    
-    /* Create Analog Input cluster manually to set REPORTING flag on present_value from the start */
-    esp_zb_attribute_list_t *pm25_cluster = esp_zb_zcl_attr_list_create(ESP_ZB_ZCL_CLUSTER_ID_ANALOG_INPUT);
-    /* Mandatory attributes for Analog Input cluster */
-    static bool pm25_out_of_service = false;
-    static float pm25_present_value = 0.0f;
-    static uint8_t pm25_status_flags = 0;
-    esp_zb_cluster_add_attr(pm25_cluster, ESP_ZB_ZCL_CLUSTER_ID_ANALOG_INPUT,
-                            ESP_ZB_ZCL_ATTR_ANALOG_INPUT_OUT_OF_SERVICE_ID, ESP_ZB_ZCL_ATTR_TYPE_BOOL,
-                            ESP_ZB_ZCL_ATTR_ACCESS_READ_ONLY, &pm25_out_of_service);
-    esp_zb_cluster_add_attr(pm25_cluster, ESP_ZB_ZCL_CLUSTER_ID_ANALOG_INPUT,
-                            ESP_ZB_ZCL_ATTR_ANALOG_INPUT_PRESENT_VALUE_ID, ESP_ZB_ZCL_ATTR_TYPE_SINGLE,
-                            ESP_ZB_ZCL_ATTR_ACCESS_READ_ONLY | ESP_ZB_ZCL_ATTR_ACCESS_REPORTING, &pm25_present_value);
-    esp_zb_cluster_add_attr(pm25_cluster, ESP_ZB_ZCL_CLUSTER_ID_ANALOG_INPUT,
-                            ESP_ZB_ZCL_ATTR_ANALOG_INPUT_STATUS_FLAGS_ID, ESP_ZB_ZCL_ATTR_TYPE_8BITMAP,
-                            ESP_ZB_ZCL_ATTR_ACCESS_READ_ONLY, &pm25_status_flags);
-    char pm25_desc[] = "\x0B""PM2.5 ug/m3";
-    esp_zb_cluster_add_attr(pm25_cluster, ESP_ZB_ZCL_CLUSTER_ID_ANALOG_INPUT,
-                            ESP_ZB_ZCL_ATTR_ANALOG_INPUT_DESCRIPTION_ID, ESP_ZB_ZCL_ATTR_TYPE_CHAR_STRING,
-                            ESP_ZB_ZCL_ATTR_ACCESS_READ_ONLY, pm25_desc);
-    ESP_ERROR_CHECK(esp_zb_cluster_list_add_analog_input_cluster(pm25_clusters, pm25_cluster, ESP_ZB_ZCL_CLUSTER_SERVER_ROLE));
-    ESP_ERROR_CHECK(esp_zb_cluster_list_add_identify_cluster(pm25_clusters, esp_zb_identify_cluster_create(NULL), ESP_ZB_ZCL_CLUSTER_SERVER_ROLE));
-    
-    esp_zb_endpoint_config_t endpoint4_config = {
-        .endpoint = HA_ESP_PM25_ENDPOINT,
-        .app_profile_id = ESP_ZB_AF_HA_PROFILE_ID,
-        .app_device_id = ESP_ZB_HA_SIMPLE_SENSOR_DEVICE_ID,
-        .app_device_version = 0
-    };
-    esp_zb_ep_list_add_ep(ep_list, pm25_clusters, endpoint4_config);
-    
-    /* Endpoint 5: PM10 - using Analog Input cluster with REPORTING flag */
-    esp_zb_cluster_list_t *pm10_clusters = esp_zb_zcl_cluster_list_create();
-    
-    /* Create Analog Input cluster manually to set REPORTING flag on present_value from the start */
-    esp_zb_attribute_list_t *pm10_cluster = esp_zb_zcl_attr_list_create(ESP_ZB_ZCL_CLUSTER_ID_ANALOG_INPUT);
-    /* Mandatory attributes for Analog Input cluster */
-    static bool pm10_out_of_service = false;
-    static float pm10_present_value = 0.0f;
-    static uint8_t pm10_status_flags = 0;
-    esp_zb_cluster_add_attr(pm10_cluster, ESP_ZB_ZCL_CLUSTER_ID_ANALOG_INPUT,
-                            ESP_ZB_ZCL_ATTR_ANALOG_INPUT_OUT_OF_SERVICE_ID, ESP_ZB_ZCL_ATTR_TYPE_BOOL,
-                            ESP_ZB_ZCL_ATTR_ACCESS_READ_ONLY, &pm10_out_of_service);
-    esp_zb_cluster_add_attr(pm10_cluster, ESP_ZB_ZCL_CLUSTER_ID_ANALOG_INPUT,
-                            ESP_ZB_ZCL_ATTR_ANALOG_INPUT_PRESENT_VALUE_ID, ESP_ZB_ZCL_ATTR_TYPE_SINGLE,
-                            ESP_ZB_ZCL_ATTR_ACCESS_READ_ONLY | ESP_ZB_ZCL_ATTR_ACCESS_REPORTING, &pm10_present_value);
-    esp_zb_cluster_add_attr(pm10_cluster, ESP_ZB_ZCL_CLUSTER_ID_ANALOG_INPUT,
-                            ESP_ZB_ZCL_ATTR_ANALOG_INPUT_STATUS_FLAGS_ID, ESP_ZB_ZCL_ATTR_TYPE_8BITMAP,
-                            ESP_ZB_ZCL_ATTR_ACCESS_READ_ONLY, &pm10_status_flags);
-    char pm10_desc[] = "\x0A""PM10 ug/m3";
-    esp_zb_cluster_add_attr(pm10_cluster, ESP_ZB_ZCL_CLUSTER_ID_ANALOG_INPUT,
-                            ESP_ZB_ZCL_ATTR_ANALOG_INPUT_DESCRIPTION_ID, ESP_ZB_ZCL_ATTR_TYPE_CHAR_STRING,
-                            ESP_ZB_ZCL_ATTR_ACCESS_READ_ONLY, pm10_desc);
-    ESP_ERROR_CHECK(esp_zb_cluster_list_add_analog_input_cluster(pm10_clusters, pm10_cluster, ESP_ZB_ZCL_CLUSTER_SERVER_ROLE));
-    ESP_ERROR_CHECK(esp_zb_cluster_list_add_identify_cluster(pm10_clusters, esp_zb_identify_cluster_create(NULL), ESP_ZB_ZCL_CLUSTER_SERVER_ROLE));
-    
-    esp_zb_endpoint_config_t endpoint5_config = {
-        .endpoint = HA_ESP_PM10_ENDPOINT,
-        .app_profile_id = ESP_ZB_AF_HA_PROFILE_ID,
-        .app_device_id = ESP_ZB_HA_SIMPLE_SENSOR_DEVICE_ID,
-        .app_device_version = 0
-    };
-    esp_zb_ep_list_add_ep(ep_list, pm10_clusters, endpoint5_config);
-    
-    /* Endpoint 6: VOC Index - using Analog Input cluster with REPORTING flag */
+    /* Endpoint 3: VOC Index - using Analog Input cluster with REPORTING flag */
     esp_zb_cluster_list_t *voc_clusters = esp_zb_zcl_cluster_list_create();
     
     /* Create Analog Input cluster manually to set REPORTING flag on present_value from the start */
@@ -1001,15 +843,15 @@ static void esp_zb_task(void *pvParameters)
     ESP_ERROR_CHECK(esp_zb_cluster_list_add_analog_input_cluster(voc_clusters, voc_cluster, ESP_ZB_ZCL_CLUSTER_SERVER_ROLE));
     ESP_ERROR_CHECK(esp_zb_cluster_list_add_identify_cluster(voc_clusters, esp_zb_identify_cluster_create(NULL), ESP_ZB_ZCL_CLUSTER_SERVER_ROLE));
     
-    esp_zb_endpoint_config_t endpoint6_config = {
+    esp_zb_endpoint_config_t endpoint3_config = {
         .endpoint = HA_ESP_VOC_ENDPOINT,
         .app_profile_id = ESP_ZB_AF_HA_PROFILE_ID,
         .app_device_id = ESP_ZB_HA_SIMPLE_SENSOR_DEVICE_ID,
         .app_device_version = 0
     };
-    esp_zb_ep_list_add_ep(ep_list, voc_clusters, endpoint6_config);
+    esp_zb_ep_list_add_ep(ep_list, voc_clusters, endpoint3_config);
     
-    /* Endpoint 7: NOx Index - using Analog Input cluster with REPORTING flag */
+    /* Endpoint 4: NOx Index - using Analog Input cluster with REPORTING flag */
     esp_zb_cluster_list_t *nox_clusters = esp_zb_zcl_cluster_list_create();
     
     /* Create Analog Input cluster manually to set REPORTING flag on present_value from the start */
@@ -1034,15 +876,15 @@ static void esp_zb_task(void *pvParameters)
     ESP_ERROR_CHECK(esp_zb_cluster_list_add_analog_input_cluster(nox_clusters, nox_cluster, ESP_ZB_ZCL_CLUSTER_SERVER_ROLE));
     ESP_ERROR_CHECK(esp_zb_cluster_list_add_identify_cluster(nox_clusters, esp_zb_identify_cluster_create(NULL), ESP_ZB_ZCL_CLUSTER_SERVER_ROLE));
     
-    esp_zb_endpoint_config_t endpoint7_config = {
+    esp_zb_endpoint_config_t endpoint4_config = {
         .endpoint = HA_ESP_NOX_ENDPOINT,
         .app_profile_id = ESP_ZB_AF_HA_PROFILE_ID,
         .app_device_id = ESP_ZB_HA_SIMPLE_SENSOR_DEVICE_ID,
         .app_device_version = 0
     };
-    esp_zb_ep_list_add_ep(ep_list, nox_clusters, endpoint7_config);
+    esp_zb_ep_list_add_ep(ep_list, nox_clusters, endpoint4_config);
     
-    /* Endpoint 8: CO2 - using Carbon Dioxide Measurement cluster with REPORTING flag */
+    /* Endpoint 5: CO2 - using Carbon Dioxide Measurement cluster with REPORTING flag */
     esp_zb_cluster_list_t *co2_clusters = esp_zb_zcl_cluster_list_create();
     
     /* CO2 measurement cluster with REPORTING flag */
@@ -1058,15 +900,15 @@ static void esp_zb_task(void *pvParameters)
     ESP_ERROR_CHECK(esp_zb_cluster_list_add_carbon_dioxide_measurement_cluster(co2_clusters, co2_cluster, ESP_ZB_ZCL_CLUSTER_SERVER_ROLE));
     ESP_ERROR_CHECK(esp_zb_cluster_list_add_identify_cluster(co2_clusters, esp_zb_identify_cluster_create(NULL), ESP_ZB_ZCL_CLUSTER_SERVER_ROLE));
     
-    esp_zb_endpoint_config_t endpoint8_config = {
+    esp_zb_endpoint_config_t endpoint5_config = {
         .endpoint = HA_ESP_CO2_ENDPOINT,
         .app_profile_id = ESP_ZB_AF_HA_PROFILE_ID,
         .app_device_id = ESP_ZB_HA_SIMPLE_SENSOR_DEVICE_ID,
         .app_device_version = 0
     };
-    esp_zb_ep_list_add_ep(ep_list, co2_clusters, endpoint8_config);
+    esp_zb_ep_list_add_ep(ep_list, co2_clusters, endpoint5_config);
     
-    /* Endpoint 9: LED Configuration */
+    /* Endpoint 6: LED Configuration */
     esp_zb_cluster_list_t *led_clusters = esp_zb_zcl_cluster_list_create();
     
     /* On/Off cluster for LED enable/disable - use saved value */
@@ -1103,10 +945,7 @@ static void esp_zb_task(void *pvParameters)
     uint16_t hum_orange_high_default = 70;
     uint16_t hum_red_low_default = 20;
     uint16_t hum_red_high_default = 80;
-    uint16_t pm25_orange_default = 25;
-    uint16_t pm25_red_default = 55;
     uint8_t led_mask_default = settings_get_led_mask();  // Use saved value
-    uint32_t pm_poll_interval_default = settings_get_pm_poll_interval();  // Use saved value
     uint8_t led_brightness_default = settings_get_led_brightness();  // Use saved value
     
     /* Custom manufacturer-specific attributes (0xF000-0xFFFF range) must use generic add_attr */
@@ -1141,17 +980,8 @@ static void esp_zb_task(void *pvParameters)
                             ZCL_LED_ATTR_HUM_RED_HIGH, ESP_ZB_ZCL_ATTR_TYPE_U16,
                             ESP_ZB_ZCL_ATTR_ACCESS_READ_WRITE, &hum_red_high_default);
     esp_zb_cluster_add_attr(led_config_cluster, ESP_ZB_ZCL_CLUSTER_ID_ANALOG_OUTPUT,
-                            ZCL_LED_ATTR_PM25_ORANGE, ESP_ZB_ZCL_ATTR_TYPE_U16,
-                            ESP_ZB_ZCL_ATTR_ACCESS_READ_WRITE, &pm25_orange_default);
-    esp_zb_cluster_add_attr(led_config_cluster, ESP_ZB_ZCL_CLUSTER_ID_ANALOG_OUTPUT,
-                            ZCL_LED_ATTR_PM25_RED, ESP_ZB_ZCL_ATTR_TYPE_U16,
-                            ESP_ZB_ZCL_ATTR_ACCESS_READ_WRITE, &pm25_red_default);
-    esp_zb_cluster_add_attr(led_config_cluster, ESP_ZB_ZCL_CLUSTER_ID_ANALOG_OUTPUT,
                             ZCL_LED_ATTR_ENABLE_MASK, ESP_ZB_ZCL_ATTR_TYPE_U8,
                             ESP_ZB_ZCL_ATTR_ACCESS_READ_WRITE, &led_mask_default);
-    esp_zb_cluster_add_attr(led_config_cluster, ESP_ZB_ZCL_CLUSTER_ID_ANALOG_OUTPUT,
-                            ZCL_LED_ATTR_PM_POLL_INTERVAL, ESP_ZB_ZCL_ATTR_TYPE_U32,
-                            ESP_ZB_ZCL_ATTR_ACCESS_READ_WRITE, &pm_poll_interval_default);
     esp_zb_cluster_add_attr(led_config_cluster, ESP_ZB_ZCL_CLUSTER_ID_ANALOG_OUTPUT,
                             ZCL_LED_ATTR_BRIGHTNESS, ESP_ZB_ZCL_ATTR_TYPE_U8,
                             ESP_ZB_ZCL_ATTR_ACCESS_READ_WRITE, &led_brightness_default);
@@ -1167,13 +997,13 @@ static void esp_zb_task(void *pvParameters)
                                             ESP_ZB_ZCL_ATTR_ACCESS_READ_WRITE | ESP_ZB_ZCL_ATTR_ACCESS_REPORTING, &current_level));
     ESP_ERROR_CHECK(esp_zb_cluster_list_add_level_cluster(led_clusters, level_cluster, ESP_ZB_ZCL_CLUSTER_SERVER_ROLE));
     
-    esp_zb_endpoint_config_t endpoint9_config = {
+    esp_zb_endpoint_config_t endpoint6_config = {
         .endpoint = HA_ESP_LED_CONFIG_ENDPOINT,
         .app_profile_id = ESP_ZB_AF_HA_PROFILE_ID,
         .app_device_id = ESP_ZB_HA_ON_OFF_OUTPUT_DEVICE_ID,
         .app_device_version = 0
     };
-    esp_zb_ep_list_add_ep(ep_list, led_clusters, endpoint9_config);
+    esp_zb_ep_list_add_ep(ep_list, led_clusters, endpoint6_config);
     
     /* Endpoint 10: Zigbee Status LED */
     esp_zb_cluster_list_t *status_led_clusters = esp_zb_zcl_cluster_list_create();
@@ -1187,13 +1017,13 @@ static void esp_zb_task(void *pvParameters)
     ESP_ERROR_CHECK(esp_zb_cluster_list_add_on_off_cluster(status_led_clusters, status_led_on_off_cluster, ESP_ZB_ZCL_CLUSTER_SERVER_ROLE));
     ESP_ERROR_CHECK(esp_zb_cluster_list_add_identify_cluster(status_led_clusters, esp_zb_identify_cluster_create(NULL), ESP_ZB_ZCL_CLUSTER_SERVER_ROLE));
     
-    esp_zb_endpoint_config_t endpoint10_config = {
+    esp_zb_endpoint_config_t endpoint7_config = {
         .endpoint = HA_ESP_STATUS_LED_ENDPOINT,
         .app_profile_id = ESP_ZB_AF_HA_PROFILE_ID,
         .app_device_id = ESP_ZB_HA_ON_OFF_LIGHT_DEVICE_ID,
         .app_device_version = 0
     };
-    esp_zb_ep_list_add_ep(ep_list, status_led_clusters, endpoint10_config);
+    esp_zb_ep_list_add_ep(ep_list, status_led_clusters, endpoint7_config);
     
     /* Add manufacturer info to primary endpoint */
     zcl_basic_manufacturer_info_t info = {

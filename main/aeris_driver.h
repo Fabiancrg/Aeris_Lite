@@ -21,9 +21,6 @@ typedef struct {
     float temperature_c;        // Temperature in Celsius
     float humidity_percent;     // Relative humidity in %
     float pressure_hpa;         // Atmospheric pressure in hPa
-    float pm1_0_ug_m3;         // PM1.0 concentration in µg/m³
-    float pm2_5_ug_m3;         // PM2.5 concentration in µg/m³
-    float pm10_ug_m3;          // PM10 concentration in µg/m³
     uint16_t voc_index;        // VOC Index (1-500)
     uint16_t nox_index;        // NOx Index (1-500)
     uint16_t voc_raw;          // VOC raw signal
@@ -49,48 +46,6 @@ typedef struct {
 
 /* SCD40 CO2 Sensor I2C Address */
 #define SCD40_I2C_ADDR          0x62  // Fixed I2C address
-
-/* UART Configuration for PMSA003A Particulate Matter Sensor
- * 
- * PMSA003-A 10-pin Connector Pinout (from datasheet):
- *   Pin 1-2:  VCC (Positive power 5V)
- *   Pin 3-4:  GND (Negative power)
- *   Pin 5:    RESET (TTL 3.3V, active LOW, internal pull-up)
- *   Pin 6:    NC (Not connected - DO NOT CONNECT)
- *   Pin 7:    RXD (Serial port receiving pin, TTL 3.3V)
- *   Pin 8:    NC (Not connected - DO NOT CONNECT)
- *   Pin 9:    TXD (Serial port transmission pin, TTL 3.3V)
- *   Pin 10:   SET (Sleep/Wake, TTL 3.3V - HIGH=normal, LOW=sleep, internal pull-up)
- * 
- * Circuit Attentions:
- *   - 5V required for fan, but all signals are 3.3V (no level conversion for ESP32)
- *   - SET and RESET have internal pull-ups (can leave floating for continuous operation)
- *   - Pin 6 and Pin 8 MUST NOT be connected
- *   - Wait 30 seconds after wake from sleep for stable readings (fan stabilization)
- * 
- * ESP32-C6 Connections:
- *   GPIO 4 (UART TX) → PMSA003-A Pin 7 (RXD) - for commands (optional)
- *   GPIO 5 (UART RX) ← PMSA003-A Pin 9 (TXD) - for data (required)
- *   GPIO 14 → PMSA003-A Pin 10 (SET) - for sleep/wake control (recommended)
- *   GPIO 2 → PMSA003-A Pin 5 (RESET) - for hardware reset (optional)
- *   5V → Pin 1-2, GND → Pin 3-4
- * 
- * Power Savings with SET Pin Control:
- *   - Continuous operation: ~100 mA
- *   - Sleep mode: <1 mA
- *   - Polling every 5 minutes: ~28.5 mA average (71.5 mA savings)
- */
-#define PMSA003A_UART_NUM       UART_NUM_1
-#define PMSA003A_UART_TX_PIN    4    // GPIO4 → PMSA003A Pin 7 (RXD) for sending commands
-#define PMSA003A_UART_RX_PIN    5    // GPIO5 ← PMSA003A Pin 9 (TXD) for receiving data
-#define PMSA003A_UART_BAUD      9600
-#define PMSA003A_UART_BUF_SIZE  512
-
-/* PMSA003A operating modes */
-typedef enum {
-    PMSA003A_MODE_PASSIVE = 0,  // Continuous automatic output
-    PMSA003A_MODE_ACTIVE = 1    // Command-driven with sleep/wake
-} pmsa003a_mode_t;
 
 /**
  * @brief Initialize air quality sensor driver
@@ -125,16 +80,6 @@ esp_err_t aeris_read_temp_humidity(float *temp_c, float *humidity);
 esp_err_t aeris_read_pressure(float *pressure_hpa);
 
 /**
- * @brief Read particulate matter concentrations
- * 
- * @param pm1_0 Pointer to PM1.0 concentration
- * @param pm2_5 Pointer to PM2.5 concentration
- * @param pm10 Pointer to PM10 concentration
- * @return ESP_OK on success
- */
-esp_err_t aeris_read_pm(float *pm1_0, float *pm2_5, float *pm10);
-
-/**
  * @brief Read VOC Index
  * 
  * @param voc_index Pointer to VOC Index value
@@ -166,42 +111,6 @@ esp_err_t aeris_read_voc_nox_raw(uint16_t *voc_raw, uint16_t *nox_raw);
  * @return ESP_OK on success
  */
 esp_err_t aeris_read_co2(uint16_t *co2_ppm);
-
-/**
- * @brief Set PMSA003A polling interval (active mode only)
- * 
- * @param interval_seconds Polling interval in seconds (0 = continuous/passive mode)
- * @return ESP_OK on success
- */
-esp_err_t aeris_set_pm_polling_interval(uint32_t interval_seconds);
-
-/**
- * @brief Get current PMSA003A polling interval
- * 
- * @return Current polling interval in seconds (0 = continuous/passive mode)
- */
-uint32_t aeris_get_pm_polling_interval(void);
-
-/**
- * @brief Wake PMSA003A sensor from sleep
- * 
- * @return ESP_OK on success
- */
-esp_err_t pmsa003a_wake(void);
-
-/**
- * @brief Put PMSA003A sensor to sleep
- * 
- * @return ESP_OK on success
- */
-esp_err_t pmsa003a_sleep(void);
-
-/**
- * @brief Request PM reading from PMSA003A (active mode)
- * 
- * @return ESP_OK on success
- */
-esp_err_t pmsa003a_request_read(void);
 
 /**
  * @brief Set temperature offset compensation for self-heating

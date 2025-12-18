@@ -28,7 +28,6 @@ static const gpio_num_t LED_GPIO_MAP[LED_ID_MAX] = {
     [LED_ID_CO2] = LED_CO2_GPIO,
     [LED_ID_VOC] = LED_VOC_GPIO,
     [LED_ID_NOX] = LED_NOX_GPIO,
-    [LED_ID_PM25] = LED_PM25_GPIO,
     [LED_ID_HUMIDITY] = LED_HUM_GPIO,
     [LED_ID_STATUS] = LED_STATUS_GPIO,
 };
@@ -38,7 +37,6 @@ static const char* LED_NAMES[LED_ID_MAX] = {
     [LED_ID_CO2] = "CO2",
     [LED_ID_VOC] = "VOC",
     [LED_ID_NOX] = "NOx",
-    [LED_ID_PM25] = "PM2.5",
     [LED_ID_HUMIDITY] = "Humidity",
     [LED_ID_STATUS] = "Status",
 };
@@ -46,7 +44,7 @@ static const char* LED_NAMES[LED_ID_MAX] = {
 /* Default thresholds */
 static led_thresholds_t s_thresholds = {
     .enabled = true,
-    .led_mask = LED_ENABLE_ALL,  // All 5 LEDs enabled by default (0x1F)
+    .led_mask = LED_ENABLE_ALL,  // All 4 LEDs enabled by default (0x0F)
     .voc_orange = 150,
     .voc_red = 250,
     .nox_orange = 150,
@@ -57,8 +55,6 @@ static led_thresholds_t s_thresholds = {
     .humidity_orange_high = 70,
     .humidity_red_low = 20,
     .humidity_red_high = 80,
-    .pm25_orange = 25,
-    .pm25_red = 55,
 };
 
 /* RMT channel handle - SINGLE shared channel for all LEDs */
@@ -69,7 +65,7 @@ static gpio_num_t s_current_gpio = GPIO_NUM_NC;  // Currently configured GPIO
 /* LED state tracking */
 static led_color_t s_current_colors[LED_ID_MAX] = {
     LED_COLOR_OFF, LED_COLOR_OFF, LED_COLOR_OFF, 
-    LED_COLOR_OFF, LED_COLOR_OFF, LED_COLOR_OFF
+    LED_COLOR_OFF, LED_COLOR_OFF
 };
 
 /* Status LED control */
@@ -298,10 +294,10 @@ esp_err_t led_indicator_init(void)
     bool was_enabled = s_thresholds.enabled;
     s_thresholds.enabled = true;
     
-    const led_id_t test_order[] = {LED_ID_CO2, LED_ID_VOC, LED_ID_HUMIDITY, LED_ID_PM25, LED_ID_NOX};
-    const char* test_names[] = {"CO2", "VOC", "Humidity", "PM2.5", "NOx"};
+    const led_id_t test_order[] = {LED_ID_CO2, LED_ID_VOC, LED_ID_HUMIDITY, LED_ID_NOX};
+    const char* test_names[] = {"CO2", "VOC", "Humidity", "NOx"};
     
-    for (int i = 0; i < 5; i++) {
+    for (int i = 0; i < 4; i++) {
         ESP_LOGI(TAG, "  Testing %s LED (GPIO%d)...", test_names[i], LED_GPIO_MAP[test_order[i]]);
         led_set_color(test_order[i], LED_COLOR_GREEN);
         vTaskDelay(pdMS_TO_TICKS(500));
@@ -312,7 +308,7 @@ esp_err_t led_indicator_init(void)
     vTaskDelay(pdMS_TO_TICKS(1000));
     
     // Turn off all test LEDs
-    for (int i = 0; i < 5; i++) {
+    for (int i = 0; i < 4; i++) {
         led_set_color(test_order[i], LED_COLOR_OFF);
     }
     ESP_LOGI(TAG, "LED test sequence complete");
@@ -533,17 +529,6 @@ static led_color_t evaluate_humidity(float humidity_percent)
     }
 }
 
-static led_color_t evaluate_pm25(float pm25_ug_m3)
-{
-    if (pm25_ug_m3 >= s_thresholds.pm25_red) {
-        return LED_COLOR_RED;
-    } else if (pm25_ug_m3 >= s_thresholds.pm25_orange) {
-        return LED_COLOR_ORANGE;
-    } else {
-        return LED_COLOR_GREEN;
-    }
-}
-
 esp_err_t led_update_from_sensors(const led_sensor_data_t *sensor_data)
 {
     if (!sensor_data) {
@@ -609,21 +594,7 @@ esp_err_t led_update_from_sensors(const led_sensor_data_t *sensor_data)
         led_set_color(LED_ID_NOX, LED_COLOR_OFF);
     }
     
-    // Update PM2.5 LED (bit 3)
-    if (s_thresholds.led_mask & LED_ENABLE_PM25_BIT) {
-        led_color_t pm25_color = evaluate_pm25(sensor_data->pm25_ug_m3);
-        if (pm25_color != s_current_colors[LED_ID_PM25]) {
-            ESP_LOGI(TAG, "PM2.5 LED: %s (%.1f µg/m³)", 
-                     pm25_color == LED_COLOR_GREEN ? "GREEN" : 
-                     pm25_color == LED_COLOR_ORANGE ? "ORANGE" : "RED",
-                     sensor_data->pm25_ug_m3);
-            led_set_color(LED_ID_PM25, pm25_color);
-        }
-    } else if (s_current_colors[LED_ID_PM25] != LED_COLOR_OFF) {
-        led_set_color(LED_ID_PM25, LED_COLOR_OFF);
-    }
-    
-    // Update Humidity LED (bit 4)
+    // Update Humidity LED (bit 3)
     if (s_thresholds.led_mask & LED_ENABLE_HUM_BIT) {
         led_color_t humidity_color = evaluate_humidity(sensor_data->humidity_percent);
         if (humidity_color != s_current_colors[LED_ID_HUMIDITY]) {

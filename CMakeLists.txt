@@ -47,7 +47,7 @@ add_compile_definitions(
     ZB_STACK_VERSION=${ZIGBEE_STACK_VERSION}
 )
 
-project(aeris_zb)
+project(aeris_lite)
 
 # Find Python
 find_package(Python3 REQUIRED)

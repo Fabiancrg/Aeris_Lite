@@ -756,94 +756,127 @@ static esp_err_t lps22hb_read_data(float *pressure_hpa, float *temperature_c)
 }
 
 /**
- * @brief Initialize I2C bus for sensors (new i2c_master driver)
+ * @brief Initialize dual I2C buses for sensors (new i2c_master driver)
  */
 static esp_err_t i2c_master_init(void)
 {
-    /* Configure I2C bus */
-    i2c_master_bus_config_t bus_config = {
+    /* Configure I2C Bus 0 (GPIO14/15): SCD4x + SGP41 */
+    i2c_master_bus_config_t bus0_config = {
         .clk_source = I2C_CLK_SRC_DEFAULT,
         .i2c_port = I2C_NUM_0,
-        .scl_io_num = AERIS_I2C_SCL_PIN,
-        .sda_io_num = AERIS_I2C_SDA_PIN,
+        .scl_io_num = AERIS_I2C_BUS0_SCL_PIN,
+        .sda_io_num = AERIS_I2C_BUS0_SDA_PIN,
         .glitch_ignore_cnt = 7,
         .flags.enable_internal_pullup = true,
     };
     
-    esp_err_t err = i2c_new_master_bus(&bus_config, &i2c_bus_handle);
+    esp_err_t err = i2c_new_master_bus(&bus0_config, &i2c_bus0_handle);
     if (err != ESP_OK) {
-        ESP_LOGE(TAG, "I2C bus creation failed: %s", esp_err_to_name(err));
+        ESP_LOGE(TAG, "I2C Bus 0 creation failed: %s", esp_err_to_name(err));
         return err;
     }
+    ESP_LOGI(TAG, "I2C Bus 0 initialized on SDA=GPIO%d, SCL=GPIO%d", 
+             AERIS_I2C_BUS0_SDA_PIN, AERIS_I2C_BUS0_SCL_PIN);
     
-    /* Add SHT45 device */
-    i2c_device_config_t sht45_cfg = {
-        .dev_addr_length = I2C_ADDR_BIT_LEN_7,
-        .device_address = SHT45_I2C_ADDR,
-        .scl_speed_hz = AERIS_I2C_FREQ_HZ,
+    /* Configure I2C Bus 1 (GPIO3/4): SHT4x + DPS368 */
+    i2c_master_bus_config_t bus1_config = {
+        .clk_source = I2C_CLK_SRC_DEFAULT,
+        .i2c_port = I2C_NUM_1,
+        .scl_io_num = AERIS_I2C_BUS1_SCL_PIN,
+        .sda_io_num = AERIS_I2C_BUS1_SDA_PIN,
+        .glitch_ignore_cnt = 7,
+        .flags.enable_internal_pullup = true,
     };
-    err = i2c_master_bus_add_device(i2c_bus_handle, &sht45_cfg, &sht45_dev_handle);
-    if (err != ESP_OK) {
-        ESP_LOGW(TAG, "Failed to add SHT45 device: %s", esp_err_to_name(err));
-    }
     
-    /* Add LPS22HB device */
-    i2c_device_config_t lps22hb_cfg = {
-        .dev_addr_length = I2C_ADDR_BIT_LEN_7,
-        .device_address = LPS22HB_I2C_ADDR,
-        .scl_speed_hz = AERIS_I2C_FREQ_HZ,
-    };
-    err = i2c_master_bus_add_device(i2c_bus_handle, &lps22hb_cfg, &lps22hb_dev_handle);
+    err = i2c_new_master_bus(&bus1_config, &i2c_bus1_handle);
     if (err != ESP_OK) {
-        ESP_LOGW(TAG, "Failed to add LPS22HB device: %s", esp_err_to_name(err));
+        ESP_LOGE(TAG, "I2C Bus 1 creation failed: %s", esp_err_to_name(err));
+        return err;
     }
+    ESP_LOGI(TAG, "I2C Bus 1 initialized on SDA=GPIO%d, SCL=GPIO%d", 
+             AERIS_I2C_BUS1_SDA_PIN, AERIS_I2C_BUS1_SCL_PIN);
     
-    /* Add SGP41 device */
-    i2c_device_config_t sgp41_cfg = {
-        .dev_addr_length = I2C_ADDR_BIT_LEN_7,
-        .device_address = SGP41_I2C_ADDR,
-        .scl_speed_hz = AERIS_I2C_FREQ_HZ,
-    };
-    err = i2c_master_bus_add_device(i2c_bus_handle, &sgp41_cfg, &sgp41_dev_handle);
-    if (err != ESP_OK) {
-        ESP_LOGW(TAG, "Failed to add SGP41 device: %s", esp_err_to_name(err));
-    }
-    
-    /* Add SCD40 device */
+    /* Add SCD40 device to Bus 0 */
     i2c_device_config_t scd40_cfg = {
         .dev_addr_length = I2C_ADDR_BIT_LEN_7,
         .device_address = SCD40_I2C_ADDR,
         .scl_speed_hz = AERIS_I2C_FREQ_HZ,
     };
-    err = i2c_master_bus_add_device(i2c_bus_handle, &scd40_cfg, &scd40_dev_handle);
+    err = i2c_master_bus_add_device(i2c_bus0_handle, &scd40_cfg, &scd40_dev_handle);
     if (err != ESP_OK) {
         ESP_LOGW(TAG, "Failed to add SCD40 device: %s", esp_err_to_name(err));
     }
     
-    ESP_LOGI(TAG, "I2C master bus initialized on SDA=%d, SCL=%d", 
-             AERIS_I2C_SDA_PIN, AERIS_I2C_SCL_PIN);
+    /* Add SGP41 device to Bus 0 */
+    i2c_device_config_t sgp41_cfg = {
+        .dev_addr_length = I2C_ADDR_BIT_LEN_7,
+        .device_address = SGP41_I2C_ADDR,
+        .scl_speed_hz = AERIS_I2C_FREQ_HZ,
+    };
+    err = i2c_master_bus_add_device(i2c_bus0_handle, &sgp41_cfg, &sgp41_dev_handle);
+    if (err != ESP_OK) {
+        ESP_LOGW(TAG, "Failed to add SGP41 device: %s", esp_err_to_name(err));
+    }
     
-    /* Probe known I2C addresses to see which devices are present */
-    ESP_LOGI(TAG, "Probing I2C devices...");
+    /* Add SHT4x device to Bus 1 */
+    i2c_device_config_t sht45_cfg = {
+        .dev_addr_length = I2C_ADDR_BIT_LEN_7,
+        .device_address = SHT4X_I2C_ADDR,
+        .scl_speed_hz = AERIS_I2C_FREQ_HZ,
+    };
+    err = i2c_master_bus_add_device(i2c_bus1_handle, &sht45_cfg, &sht45_dev_handle);
+    if (err != ESP_OK) {
+        ESP_LOGW(TAG, "Failed to add SHT4x device: %s", esp_err_to_name(err));
+    }
     
+    /* Add DPS368 device to Bus 1 */
+    i2c_device_config_t dps368_cfg = {
+        .dev_addr_length = I2C_ADDR_BIT_LEN_7,
+        .device_address = DPS368_I2C_ADDR,
+        .scl_speed_hz = AERIS_I2C_FREQ_HZ,
+    };
+    err = i2c_master_bus_add_device(i2c_bus1_handle, &dps368_cfg, &lps22hb_dev_handle);
+    if (err != ESP_OK) {
+        ESP_LOGW(TAG, "Failed to add DPS368 device: %s", esp_err_to_name(err));
+    }
+    
+    /* Probe known I2C addresses on both buses */
+    ESP_LOGI(TAG, "Probing I2C Bus 0 devices (SCD4x + SGP41)...");
     const struct {
         uint8_t addr;
         const char *name;
-    } devices[] = {
-        {SHT45_I2C_ADDR, "SHT45"},
-        {LPS22HB_I2C_ADDR, "LPS22HB"},
+    } bus0_devices[] = {
+        {SCD40_I2C_ADDR, "SCD40/SCD41"},
         {SGP41_I2C_ADDR, "SGP41"},
-        {SCD40_I2C_ADDR, "SCD40"},
-        {0x5C, "LPS22HB (alt)"},  // LPS22HB alternate address (SA0=LOW)
-        {0x45, "SHT45 (alt)"},    // Some SHT4x variants
     };
     
-    for (size_t i = 0; i < sizeof(devices)/sizeof(devices[0]); i++) {
-        esp_err_t probe_ret = i2c_master_probe(i2c_bus_handle, devices[i].addr, pdMS_TO_TICKS(100));
+    for (size_t i = 0; i < sizeof(bus0_devices)/sizeof(bus0_devices[0]); i++) {
+        esp_err_t probe_ret = i2c_master_probe(i2c_bus0_handle, bus0_devices[i].addr, pdMS_TO_TICKS(100));
         if (probe_ret == ESP_OK) {
-            ESP_LOGI(TAG, "  [OK] %s found at 0x%02X", devices[i].name, devices[i].addr);
+            ESP_LOGI(TAG, "  [OK] %s found at 0x%02X", bus0_devices[i].name, bus0_devices[i].addr);
         } else {
-            ESP_LOGD(TAG, "  [--] %s not found at 0x%02X", devices[i].name, devices[i].addr);
+            ESP_LOGD(TAG, "  [--] %s not found at 0x%02X", bus0_devices[i].name, bus0_devices[i].addr);
+        }
+    }
+    
+    ESP_LOGI(TAG, "Probing I2C Bus 1 devices (SHT4x + DPS368)...");
+    const struct {
+        uint8_t addr;
+        const char *name;
+    } bus1_devices[] = {
+        {SHT4X_I2C_ADDR, "SHT4x"},
+        {DPS368_I2C_ADDR, "DPS368"},
+        {0x44, "SHT4x (alt)"},
+        {0x45, "SHT4x (alt)"},
+        {0x76, "DPS368 (alt)"},
+    };
+    
+    for (size_t i = 0; i < sizeof(bus1_devices)/sizeof(bus1_devices[0]); i++) {
+        esp_err_t probe_ret = i2c_master_probe(i2c_bus1_handle, bus1_devices[i].addr, pdMS_TO_TICKS(100));
+        if (probe_ret == ESP_OK) {
+            ESP_LOGI(TAG, "  [OK] %s found at 0x%02X", bus1_devices[i].name, bus1_devices[i].addr);
+        } else {
+            ESP_LOGD(TAG, "  [--] %s not found at 0x%02X", bus1_devices[i].name, bus1_devices[i].addr);
         }
     }
     

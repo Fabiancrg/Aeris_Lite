@@ -465,7 +465,7 @@
     "pinned_symbol_libs": []
   },
   "meta": {
-    "filename": "aeris.kicad_pro",
+    "filename": "aeris-lite.kicad_pro",
     "version": 3
   },
   "net_settings": {

@@ -1,7 +1,26 @@
 # RGB LED Implementation Summary
 
 ## Overview
-Successfully added **6 separate SK6812 RGB LEDs** with configurable air quality thresholds via Zigbee2MQTT. Each sensor parameter (CO2, VOC, PM2.5, Humidity, NOx) has its own dedicated LED indicator, plus a separate **status LED** for network/firmware state.
+Successfully implemented **5 SK6812/WS2812B RGB LEDs in daisy-chain configuration** on a single GPIO with configurable air quality thresholds via Zigbee2MQTT. Each sensor parameter (CO2, VOC, NOx, Humidity) has its own dedicated LED indicator, plus a separate **status LED** for network/firmware state.
+
+## Architecture Changes (v2.0)
+
+### Hardware Simplification
+**Previous (v1.0):** 5 separate GPIOs (GPIO1, GPIO18, GPIO15, GPIO14, GPIO8) with 74AHCT244 driver
+**Current (v2.0):** Single GPIO20 with SN74AHCT1G125 buffer, 5 LEDs in daisy-chain
+
+**Benefits:**
+- Saves 4 GPIOs for other peripherals
+- Simpler PCB routing (single data line)
+- More efficient RMT usage (1 channel instead of 5)
+- Synchronized LED updates (all LEDs refresh at once)
+- Single point buffer/level shifter
+
+### LED Daisy-Chain Order
+```
+GPIO20 → Buffer → [CO2] → [VOC] → [NOx] → [Humidity] → [Status]
+                   Pos0     Pos1    Pos2      Pos3         Pos4
+```
 
 ## Files Created/Modified
 

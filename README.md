@@ -28,7 +28,9 @@ This project implements a Zigbee Router that reads air quality sensors and expos
   - **LPS22HB Pressure sensor** via I2C
   - **SGP41 VOC and NOx sensor** via I2C
   - **SCD40 CO2 sensor** via I2C
-- **4× SK6812 RGB LEDs** (air quality visual indicators)
+- **5× SK6812/WS2812B RGB LEDs** in daisy-chain configuration (air quality visual indicators)
+  - Single GPIO20 with SN74AHCT1G125 buffer for all LEDs
+  - LED chain: CO2 → VOC → NOx → Humidity → Status
 - I2C connection (SDA/SCL pins configurable)
 - **Power supply**: 5V USB, 500mA minimum recommended
 

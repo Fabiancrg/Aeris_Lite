@@ -5,27 +5,29 @@
 
 #include "driver/gpio.h"
 
-/* RGB LED configuration (SK6812) - 4 separate LEDs for air quality indicators
- * Optimized for ESP32-C6 Supermini available GPIOs
+/* I2C Bus Configuration - Dual Bus Setup
+ * Bus 0: SCD4x (CO2) + SGP41 (VOC/NOx) - Self-heating sensors
+ * Bus 1: SHT4x (Temp/Humidity) + DPS368 (Pressure) - Precision environmental sensors
  */
-#ifndef LED_CO2_GPIO
-#define LED_CO2_GPIO GPIO_NUM_1   /* CO2 level indicator */
+#define I2C_BUS0_SDA_GPIO    GPIO_NUM_14  /* I2C Bus 0 SDA */
+#define I2C_BUS0_SCL_GPIO    GPIO_NUM_15  /* I2C Bus 0 SCL */
+#define I2C_BUS1_SDA_GPIO    GPIO_NUM_3   /* I2C Bus 1 SDA */
+#define I2C_BUS1_SCL_GPIO    GPIO_NUM_4   /* I2C Bus 1 SCL */
+#define I2C_MASTER_FREQ_HZ   100000       /* 100kHz I2C clock */
+
+/* RGB LED configuration (SK6812/WS2812B) - 5 LEDs in daisy-chain configuration
+ * All LEDs connected in series on a single GPIO with SN74AHCT1G125 buffer
+ * LED order in chain: CO2 -> VOC -> NOx -> Humidity -> Status
+ */
+#ifndef LED_STRIP_GPIO
+#define LED_STRIP_GPIO GPIO_NUM_2   /* Single GPIO for all LEDs (through SN74AHCT1G125 buffer) */
 #endif
 
-#ifndef LED_VOC_GPIO
-#define LED_VOC_GPIO GPIO_NUM_18  /* VOC Index indicator */
-#endif
+#define LED_STRIP_NUM_LEDS 5  /* Total number of LEDs in the chain */
 
-#ifndef LED_NOX_GPIO
-#define LED_NOX_GPIO GPIO_NUM_15  /* NOx Index indicator */
-#endif
-
-#ifndef LED_HUM_GPIO
-#define LED_HUM_GPIO GPIO_NUM_14  /* Humidity level indicator */
-#endif
-
-#ifndef LED_STATUS_GPIO
-#define LED_STATUS_GPIO GPIO_NUM_8  /* Zigbee network status indicator (built-in LED) */
-#endif
-
-#define LED_STATUS_NUM_LEDS 1  /* Number of LEDs per indicator (1 each) */
+/* LED positions in the daisy-chain (0-indexed) */
+#define LED_CHAIN_INDEX_CO2      0  /* First LED: CO2 level indicator */
+#define LED_CHAIN_INDEX_VOC      1  /* Second LED: VOC Index indicator */
+#define LED_CHAIN_INDEX_NOX      2  /* Third LED: NOx Index indicator */
+#define LED_CHAIN_INDEX_HUMIDITY 3  /* Fourth LED: Humidity level indicator */
+#define LED_CHAIN_INDEX_STATUS   4  /* Fifth LED: Zigbee network status indicator */

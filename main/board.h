@@ -31,3 +31,12 @@
 #define LED_CHAIN_INDEX_NOX      2  /* Third LED: NOx Index indicator */
 #define LED_CHAIN_INDEX_HUMIDITY 3  /* Fourth LED: Humidity level indicator */
 #define LED_CHAIN_INDEX_STATUS   4  /* Fifth LED: Zigbee network status indicator */
+
+/* Fan Control Configuration (PWM 4-wire fan with TACH feedback)
+ * Circuit: IRLML6344TRPBF N-MOSFET + N5819HW1-7-F Schottky diode
+ * Fan: 5V PWM fan with tachometer output
+ */
+#define FAN_POWER_GPIO      GPIO_NUM_5   /* Fan power control via N-MOSFET (ON/OFF) */
+#define FAN_PWM_GPIO        GPIO_NUM_6   /* PWM speed control output (0-100%) */
+#define FAN_TACH_GPIO       GPIO_NUM_7   /* Tachometer pulse input (RPM monitoring) */
+#define FAN_PWM_FREQ_HZ     25000        /* 25 kHz PWM frequency (standard for PC fans) */

@@ -7,6 +7,7 @@
 
 #include "aeris_driver.h"
 #include "board.h"
+#include "fan_control.h"
 #include "esp_log.h"
 #include "string.h"
 #include "freertos/FreeRTOS.h"
@@ -923,6 +924,17 @@ esp_err_t aeris_driver_init(void)
             ESP_LOGW(TAG, "Failed to initialize SCD40: %s", esp_err_to_name(ret));
             ESP_LOGW(TAG, "Continuing without CO2 sensor");
         }
+    }
+    
+    // Initialize fan control for airflow management
+    ret = fan_init();
+    if (ret != ESP_OK) {
+        ESP_LOGW(TAG, "Failed to initialize fan control: %s", esp_err_to_name(ret));
+        ESP_LOGW(TAG, "Continuing without fan control - may affect sensor accuracy");
+    } else {
+        // Start fan at low speed for continuous airflow
+        fan_set_speed(FAN_MODE_LOW);
+        ESP_LOGI(TAG, "Fan control enabled - running at low speed");
     }
     
     ESP_LOGI(TAG, "Aeris driver initialized successfully");

@@ -123,7 +123,8 @@ static bool scd40_initialized = false;
 static uint64_t scd40_serial_number = 0;
 
 /* I2C master bus and device handles (new driver) */
-static i2c_master_bus_handle_t i2c_bus_handle = NULL;
+static i2c_master_bus_handle_t i2c_bus0_handle = NULL;  // Bus 0: SCD4x + SGP41
+static i2c_master_bus_handle_t i2c_bus1_handle = NULL;  // Bus 1: SHT4x + DPS368
 static i2c_master_dev_handle_t sht45_dev_handle = NULL;
 static i2c_master_dev_handle_t lps22hb_dev_handle = NULL;
 static i2c_master_dev_handle_t sgp41_dev_handle = NULL;
